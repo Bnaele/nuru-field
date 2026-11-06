@@ -722,3 +722,17 @@
     justify-content: center;
   }
 }
+
+/* Configuration notice — shown when the build has no Supabase credentials */
+.config-notice { min-height:100vh; display:grid; place-items:center; padding:48px 24px; background:#eef1e7; }
+.config-notice-inner { width:min(620px,100%); padding:40px 42px; background:var(--paper); border-top:4px solid #a45036; box-shadow:0 25px 70px rgba(30,64,43,.14); }
+.config-notice-kicker { margin-bottom:14px; color:#a45036; font-family:'DM Mono',monospace; font-size:10px; font-weight:500; letter-spacing:.12em; text-transform:uppercase; }
+.config-notice h1 { margin-bottom:18px; font-family:'Playfair Display',Georgia,serif; font-size:clamp(28px,3.4vw,38px); font-weight:500; letter-spacing:-.04em; line-height:1.08; }
+.config-notice p { color:#5c6b60; font-size:14px; line-height:1.65; }
+.config-notice code { padding:1px 5px; color:var(--ink); background:#e7ede3; border-radius:3px; font-family:'DM Mono',monospace; font-size:.9em; }
+.config-notice-steps { margin:22px 0; padding-left:20px; color:#5c6b60; font-size:14px; line-height:1.75; }
+.config-notice-steps li { margin-bottom:9px; }
+.config-notice-danger { padding:13px 15px; background:#fff1f2; border:1px solid #fecaca; border-radius:4px; color:#991b1b !important; }
+.config-notice-danger code { background:#fecaca; color:#7f1d1d; }
+.config-notice-footnote { margin-bottom:0; padding-top:20px; border-top:1px solid var(--line); font-size:12.5px; }
+@media (max-width:620px) { .config-notice { padding:28px 16px; }.config-notice-inner { padding:28px 24px; } }

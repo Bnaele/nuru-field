@@ -4,10 +4,11 @@ import './App.css'
 
 import Nav from './components/Nav'
 import AuthModal from './components/AuthModal'
+import ConfigNotice from './components/ConfigNotice'
 import HomePage from './pages/HomePage'
 import FieldPage from './pages/FieldPage'
 import ScanPage from './pages/ScanPage'
-import { supabase } from './supabaseClient'
+import { configProblem, supabase } from './supabaseClient'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
@@ -24,16 +25,39 @@ export default function App() {
   const [session, setSession] = useState(undefined)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    // Without a client the environment is incomplete. ConfigNotice explains that,
+    // and there is no auth state to subscribe to.
+    if (!supabase) {
+      setSession(null)
+      return undefined
+    }
+
+    let active = true
+    // getSession reads from local storage and rejects if the stored token is
+    // corrupt. Unhandled, that rejection leaves the app on "Loading…" forever.
+    supabase.auth
+      .getSession()
+      .then(({ data }) => { if (active) setSession(data.session ?? null) })
+      .catch(() => { if (active) setSession(null) })
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => setSession(session),
+      (_event, nextSession) => setSession(nextSession),
     )
-    return () => subscription.unsubscribe()
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    setSession(null)
+    // Clear local state even when the network call fails, otherwise a failed
+    // sign-out leaves the user looking signed in with a dead token.
+    try {
+      await supabase?.auth.signOut()
+    } finally {
+      setSession(null)
+    }
   }
 
   const [weather, setWeather] = useState(defaultWeather)
@@ -164,6 +188,10 @@ export default function App() {
     } finally {
       setChatLoading(false)
     }
+  }
+
+  if (configProblem) {
+    return <ConfigNotice problem={configProblem} />
   }
 
   if (session === undefined) {
