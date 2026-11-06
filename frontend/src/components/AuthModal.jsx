@@ -18,6 +18,33 @@ import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import Icon from './Icon';
 
+// Supabase hands back the browser's own words when it cannot reach its servers:
+// "Failed to fetch", or "Load failed" on Safari. Printed verbatim under the form
+// that reads as a fault in the app rather than a problem with the connection, so
+// the transport-level cases are translated here. Genuine auth messages — a wrong
+// password, an unconfirmed address — still come through as they are, because they
+// are the ones the person has to act on.
+function describeAuthError(failure) {
+  const raw = (failure?.message || '').trim();
+  const unreachable =
+    failure?.name === 'AuthRetryableFetchError' ||
+    /failed to fetch|networkerror|load failed|fetch failed|network request failed/i.test(raw);
+
+  if (unreachable) {
+    return 'Could not reach the sign-in service. Check your connection and try again.';
+  }
+  if (/invalid login credentials/i.test(raw)) {
+    return 'That email and password do not match an account.';
+  }
+  if (/email not confirmed/i.test(raw)) {
+    return 'Confirm your email address first — the link is in your inbox.';
+  }
+  if (/rate limit|too many requests/i.test(raw)) {
+    return 'Too many attempts. Wait a minute and try again.';
+  }
+  return raw || 'Something went wrong. Please try again.';
+}
+
 export default function AuthModal() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,7 +71,7 @@ export default function AuthModal() {
       const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
 
       if (signUpError) {
-        setMessage(signUpError.message);
+        setMessage(describeAuthError(signUpError));
         setError(true);
         return;
       }
@@ -72,7 +99,7 @@ export default function AuthModal() {
       setMessage('Account created. Check your email to confirm, then sign in.');
     } catch (err) {
       // Network-level failure (e.g. cannot reach Supabase).
-      setMessage(err?.message || 'Something went wrong. Please try again.');
+      setMessage(describeAuthError(err));
       setError(true);
     } finally {
       setLoading(false);
@@ -88,7 +115,7 @@ export default function AuthModal() {
       const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
       if (signInError) {
-        setMessage(signInError.message);
+        setMessage(describeAuthError(signInError));
         setError(true);
         return;
       }
@@ -99,7 +126,7 @@ export default function AuthModal() {
       setMessage('Sign-in succeeded but no session was returned. Try again.');
       setError(true);
     } catch (err) {
-      setMessage(err?.message || 'Something went wrong. Please try again.');
+      setMessage(describeAuthError(err));
       setError(true);
     } finally {
       setLoading(false);
