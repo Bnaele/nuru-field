@@ -46,6 +46,22 @@ const CONFIDENCE_LABEL = {
   low: 'weak evidence',
 }
 
+// A grower opening this card wants something they can eat or sell as food, but
+// the catalogue is every species ECOCROP can score. Left unfiltered, the list is
+// topped by plants that fit the climate beautifully and are not dinner: myrtle
+// scored 99 for Johannesburg, ahead of potato at 98. So "Food" is the view the
+// card opens on, and "All" plus the per-category chips are one click away.
+//
+// Beverage is included because tea and coffee are cash crops a smallholder grows
+// on purpose. Medicinal, ornamental, timber, fibre, fodder and industrial are not:
+// they are legitimately in the catalogue, they are just not what someone means
+// when they ask what to plant in the back bed.
+const FOOD_CATEGORIES = [
+  'Vegetable', 'Fruit', 'Grain', 'Legume', 'Herb',
+  'Spice', 'Staple', 'Nut', 'Oilseed', 'Beverage',
+]
+const FOOD_FILTER = FOOD_CATEGORIES.join(',')
+
 const SEARCH_DEBOUNCE_MS = 350
 
 function ScoreBadge({ score }) {
@@ -57,7 +73,7 @@ export default function CropRecommendations({ fieldProfile }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [category, setCategory] = useState(null)
+  const [category, setCategory] = useState(FOOD_FILTER)
   const [includeAll, setIncludeAll] = useState(false)
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
@@ -116,6 +132,18 @@ export default function CropRecommendations({ fieldProfile }) {
     return Object.entries(counts)
       .filter(([name]) => name !== 'Other')
       .map(([name, count]) => ({ name, count }))
+  }, [data])
+
+  // The Food chip sums its categories out of the catalogue, measured exactly the
+  // way every other chip is. It is deliberately not the number of results: the
+  // "N of 2,066 species" counter above reports how many were actually scored for
+  // this field, which is smaller because species with no common name are left out
+  // until the toggle below is switched on.
+  const foodCount = useMemo(() => {
+    const counts = data?.catalogue?.categories
+    if (!counts) return null
+    const total = FOOD_CATEGORIES.reduce((sum, name) => sum + (counts[name] || 0), 0)
+    return total || null
   }, [data])
 
   if (latitude === null || latitude === undefined) return null
@@ -197,6 +225,15 @@ export default function CropRecommendations({ fieldProfile }) {
         <div className="crop-filters" role="group" aria-label="Filter crops by category">
           <button
             type="button"
+            className={`crop-filter ${category === FOOD_FILTER ? 'active' : ''}`}
+            onClick={() => setCategory(FOOD_FILTER)}
+            title="Vegetables, fruit, grains, legumes, herbs, spices, staples, nuts, oilseeds and beverage crops"
+          >
+            Food
+            {foodCount != null && <span className="crop-filter-count">{foodCount}</span>}
+          </button>
+          <button
+            type="button"
             className={`crop-filter ${category === null ? 'active' : ''}`}
             onClick={() => setCategory(null)}
           >
@@ -245,8 +282,14 @@ export default function CropRecommendations({ fieldProfile }) {
               </>
             ) : (
               <>
-                Nothing matched {category ? `${category.toLowerCase()} crops ` : ''}with enough
-                confidence. Try <em>All</em>, or include species with no common name.
+                Nothing matched{' '}
+                {category === FOOD_FILTER
+                  ? 'food crops '
+                  : category
+                    ? `${category.toLowerCase()} crops `
+                    : ''}
+                with enough confidence. Try <em>All</em>, or include species with no common
+                name.
               </>
             )}
           </p>
