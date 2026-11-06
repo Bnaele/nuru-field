@@ -1,0 +1,40 @@
+# Render blueprint for the Nuru Field API.
+#
+# Create the service from this file: Render dashboard -> New -> Blueprint ->
+# pick this repository. `sync: false` means Render prompts for the value on
+# creation and stores it encrypted, so no secret is ever committed here.
+#
+# The free plan sleeps after 15 minutes idle. The first request afterwards takes
+# around 30 seconds while it wakes, which a portfolio visitor will notice; the
+# paid instance types avoid it. Everything the app reads from Open-Meteo,
+# SoilGrids, Nominatim and Joburg Market is keyless, so the sleeping service is
+# still the only cost.
+services:
+  - type: web
+    name: nuru-field-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      # Matches the version the project was developed and tested against.
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+
+      - key: SUPABASE_URL
+        sync: false
+      # Bypasses Row Level Security and is read only by backend/db.py.
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+
+      # Must include the frontend's origin, or the dashboard reports that it
+      # cannot reach an API that is running perfectly. See backend/.env.example.
+      - key: CORS_ORIGINS
+        sync: false

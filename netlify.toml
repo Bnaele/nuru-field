@@ -1,0 +1,28 @@
+# Netlify build for the Nuru Field frontend.
+#
+# The app is a single-page React build served from frontend/dist. Deep links such
+# as /field and /login are handled by frontend/public/_redirects, which Vite
+# copies into the build output.
+
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Vite 8 runs on rolldown, which imports node:util#styleText and therefore needs
+  # Node 20+. Pinning it here keeps that decision with the repository instead of
+  # with whatever version the host happens to default to.
+  NODE_VERSION = "20"
+
+# The three VITE_ variables are build-time inlining, not runtime configuration:
+# changing them in the Netlify UI does nothing until the site is rebuilt.
+#   VITE_SUPABASE_URL       Project settings -> API -> Project URL
+#   VITE_SUPABASE_ANON_KEY  Project settings -> API -> anon / publishable key
+#   VITE_API_BASE_URL       the Render URL, e.g. https://nuru-field-api.onrender.com
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
