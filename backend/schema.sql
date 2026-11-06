@@ -27,26 +27,39 @@ create extension if not exists "pgcrypto";
 -- are produced by scoring a field's *measured* climate and soil against these
 -- envelopes, so there is no hand-written "crop suits province X" table anywhere.
 --
+-- The table covers every taxon the archive has a usable envelope for (~2,070), not
+-- a shortlist. ECOCROP only carries scientific names, so `name` is the common name
+-- where one is known and the scientific name otherwise -- compare the two columns
+-- to tell which. `name` is therefore deliberately NOT unique: "Tomato" can come
+-- from two synonymous taxa.
+--
+-- Rainfall and pH are nullable because the archive genuinely lacks them for a
+-- handful of species. They are empty rather than defaulted to a plausible
+-- midpoint; the scorer renormalises its weights over what is present.
+--
 -- Regenerate backend/data/crop_reference.csv with:
 --     python backend/data/build_crop_data.py
 -- Source: FAO ECOCROP, DOI 10.5281/zenodo.13319716
 create table if not exists crop_reference (
     id              uuid primary key default gen_random_uuid(),
-    name            text not null unique,
+    name            text not null,
     scientific_name text not null unique,
     category        text,
     min_temp        numeric(5, 1) not null,  -- degrees C, optimal range
     max_temp        numeric(5, 1) not null,
-    min_rainfall_mm numeric(7, 1) not null,  -- mm per year, optimal range
-    max_rainfall_mm numeric(7, 1) not null,
-    min_ph          numeric(4, 1) not null,  -- optimal soil pH range
-    max_ph          numeric(4, 1) not null,
+    min_rainfall_mm numeric(7, 1),           -- mm per year, optimal range
+    max_rainfall_mm numeric(7, 1),
+    min_ph          numeric(4, 1),           -- optimal soil pH range
+    max_ph          numeric(4, 1),
     source          text,
     created_at      timestamptz not null default now()
 );
 
 create index if not exists crop_reference_name_idx
     on crop_reference (name);
+
+create index if not exists crop_reference_category_idx
+    on crop_reference (category);
 
 -- ---------------------------------------------------------------------------
 -- Market prices
