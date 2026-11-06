@@ -34,7 +34,12 @@ load_local_env()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
-_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173")
+# Vite prints `localhost`, but a browser tab opened at the same server's
+# `127.0.0.1` is a different origin as far as CORS is concerned. Both loopback
+# spellings are allowed by default so the dev server works whichever one the
+# address bar ends up with — the failure mode otherwise is every request in the
+# dashboard reporting "Cannot reach the Nuru API" while the API is running fine.
+_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
 CORS_ORIGINS = [origin.strip() for origin in _origins.split(",") if origin.strip()]
 
 # --- Supabase ---------------------------------------------------------------
