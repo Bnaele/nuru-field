@@ -25,15 +25,22 @@ pair, distinguished by statisticalMethod:
 Coverage
 --------
 Every taxon in the archive with a usable envelope is included — not a hand-picked
-shortlist. 2,057 of the 2,567 taxa carry a complete temperature pair, and that is
-the set written out: fruit, vegetables, herbs, spices, nuts, grains, legumes,
-oilseeds, fodder, fibre, timber, medicinal and ornamental plants.
+shortlist. Of the 2,567 taxa, 2,071 carry a complete temperature pair; two of
+those are rejected as impossible (see PLAUSIBLE), and de-duplication by common
+name removes two more, leaving 2,065 rows. That set spans fruit, vegetables,
+herbs, spices, nuts, grains, legumes, oilseeds, fodder, fibre, timber, medicinal
+and ornamental plants.
 
 The archive only carries scientific names, so common names are supplied for the
 species a South African grower is likely to search for (see CURATED_NAMES).
 Everything else keeps its scientific name as the display name rather than being
 dropped, because "I cannot name this in English" is not a reason to hide a plant
 that has a real envelope. A row whose name is still Latin is visible as such.
+
+Source data is not trusted blindly. A handful of values in the archive are
+transcription errors — a minimum temperature of 160 C, a 9000 mm rainfall
+minimum against a 1300 mm maximum — and those are handled explicitly rather than
+passed through or silently repaired.
 
 What is derived vs. what is authored
 ------------------------------------
@@ -506,6 +513,37 @@ def _clean_number(value: str) -> str:
     return f"{number:g}"
 
 
+# The archive is a scrape of FAO's published sheets and carries a few
+# transcription errors. Barringtonia racemosa is recorded with a minimum growth
+# temperature of 160 and Eugenia stipitata with 2000-3500, both against a unit of
+# degrees Celsius; Carissa edulis carries a 9000 mm rainfall minimum.
+#
+# These are rejected rather than repaired. Guessing that 160 means 16, or that a
+# 9000 came from a stray zero, would be inventing agronomic data in a project
+# whose whole point is that every number is traceable.
+#
+# The windows are deliberately very wide: they exist to catch impossible values,
+# not to second-guess unusual but real ones.
+PLAUSIBLE = {
+    "OptimalGrowthTemperature": (-15.0, 60.0),   # degrees C
+    "optimal_rainfall": (0.0, 20000.0),          # mm per year
+    "OptimalGrowthpH": (2.0, 11.0),
+}
+
+
+def _is_plausible(prop: str, bounds: dict[str, str]) -> bool:
+    """True if the envelope is complete, correctly ordered and physically possible."""
+    low_text = bounds.get("min") or ""
+    high_text = bounds.get("max") or ""
+    if not low_text or not high_text:
+        return False
+    low, high = float(low_text), float(high_text)
+    if low > high:
+        return False
+    floor, ceiling = PLAUSIBLE[prop]
+    return floor <= low and high <= ceiling
+
+
 def build_rows(
     taxa: dict[str, str],
     measurements: list[dict[str, str]],
@@ -532,12 +570,18 @@ def build_rows(
         if number:
             envelopes[(tid, prop)][bound] = number
 
-    required_fields = DERIVED_PROPERTIES[REQUIRED_PROPERTY]
+    rejected: list[str] = []
+    dropped: list[str] = []
 
     candidates: list[dict[str, str]] = []
     for tid, scientific in taxa.items():
         required = envelopes.get((tid, REQUIRED_PROPERTY), {})
         if "min" not in required or "max" not in required:
+            continue
+        if not _is_plausible(REQUIRED_PROPERTY, required):
+            # Without a usable temperature window the species cannot be scored at
+            # all, so the row is dropped and the reason is reported.
+            rejected.append(f"{scientific} ({required.get('min')}-{required.get('max')} C)")
             continue
 
         curated = CURATED_NAMES.get(scientific)
@@ -548,16 +592,28 @@ def build_rows(
             "source": SOURCE_NAME,
         }
 
+        usable = 0
         for prop, (min_field, max_field) in DERIVED_PROPERTIES.items():
             bounds = envelopes.get((tid, prop), {})
-            record[min_field] = bounds.get("min", "")
-            record[max_field] = bounds.get("max", "")
+            if _is_plausible(prop, bounds):
+                usable += 1
+                record[min_field] = bounds["min"]
+                record[max_field] = bounds["max"]
+            else:
+                # A broken optional envelope loses the envelope, not the species:
+                # the crop can still be scored on its temperature window, and the
+                # scorer renormalises over what is present.
+                record[min_field] = ""
+                record[max_field] = ""
+                if bounds:
+                    dropped.append(
+                        f"{scientific} {prop.replace('OptimalGrowth', '').lower()} "
+                        f"{bounds.get('min', '?')}-{bounds.get('max', '?')}"
+                    )
 
         # Completeness is only used to choose between two taxa sharing a common
         # name; it never excludes a crop.
-        record["_completeness"] = str(
-            sum(1 for prop in DERIVED_PROPERTIES if envelopes.get((tid, prop)))
-        )
+        record["_completeness"] = str(usable)
         candidates.append(record)
 
     # Lycopersicon esculentum and Solanum lycopersicum are both "Tomato", and two
@@ -575,6 +631,18 @@ def build_rows(
     for record in sorted(by_name.values(), key=lambda r: (r["category"], r["name"])):
         record.pop("_completeness", None)
         rows.append(record)
+
+    # A row dropped for impossible data is a defect in the source, not something
+    # routine, so it is always named. These are the species a reader should know
+    # are missing rather than wonder about.
+    for line in rejected:
+        print(f"warning: dropped {line} - value is not physically possible", file=sys.stderr)
+
+    # A dropped optional envelope is minor: the crop is still listed and scored on
+    # temperature. Listed only under --verbose.
+    if dropped and verbose:
+        for line in dropped:
+            print(f"note: blanked impossible envelope {line}", file=sys.stderr)
 
     # Report curated species the archive does not carry under that exact name,
     # so a typo or a renamed synonym is visible instead of silently missing. The

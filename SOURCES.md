@@ -108,20 +108,44 @@ temperature, annual rainfall and soil pH, taken from the archive's
 
 What is **authored in this repository, not from ECOCROP**:
 
-- The species → common name mapping (66 species).
+- The species → common name mapping (254 of the 2,065 rows; every other row keeps
+  its scientific name).
 - The category label (Grain, Legume, Vegetable, …).
-- The soil-texture adjustment in `backend/crops.py`. ECOCROP carries no texture
-  envelope, so scoring one against a fabricated threshold would be dishonest.
-  Texture instead makes a small capped adjustment for crops with a well-known
-  sensitivity, and every crop that receives one gets a `cautions` line saying it
-  is general agronomy guidance rather than a measured threshold.
+- The plausibility bounds in `build_crop_data.py`, and the soil-texture adjustment
+  in `backend/crops.py`. ECOCROP carries no texture envelope, so scoring one
+  against a fabricated threshold would be dishonest. Texture instead makes a
+  small capped adjustment for crops with a well-known sensitivity, and every crop
+  that receives one gets a `cautions` line saying it is general agronomy guidance
+  rather than a measured threshold.
 
-Regenerate the CSV with:
+### Rejected source rows
+
+The archive is a scrape of FAO's published sheets and carries a few transcription
+errors. They are rejected rather than repaired, because guessing that `160` means
+`16` would be inventing agronomic data in a project built on traceability.
+
+| Species | Value in the archive | Why it is rejected |
+| --- | --- | --- |
+| *Barringtonia racemosa* | min temp 160, max 28 °C | Not a temperature a plant grows at; row dropped |
+| *Eugenia stipitata* | temp range 2000–3500 °C | Same, by a factor of 100; row dropped |
+| *Acacia calcicola* | rainfall 150–100 mm | Minimum above maximum; rainfall blanked, species kept |
+| *Acorus calamus* | rainfall 7000–2000 mm | Inverted and implausible; rainfall blanked, species kept |
+| *Carissa edulis* | rainfall 9000–1300 mm | Inverted and implausible; rainfall blanked, species kept |
+| *Sambucus nigra* | rainfall max 12000 mm | Implausible; rainfall blanked, species kept |
+
+A species whose required temperature envelope is impossible is dropped, because
+it cannot be scored at all. A species whose *optional* rainfall or pH envelope is
+broken keeps its row with that envelope blank, and the scorer renormalises over
+what remains. `build_crop_data.py --verbose` prints every rejection.
+
+Regenerate the CSV and load it into Supabase with:
 
 ```bash
 cd backend
 python data/build_crop_data.py           # rewrite crop_reference.csv
 python data/build_crop_data.py --check   # fail if the CSV is stale
+python seed.py --dry-run                 # validate the CSV, no database needed
+python seed.py                           # upsert into the crop_reference table
 ```
 
 Only the derived CSV is committed. The 10 MB archive is downloaded into a

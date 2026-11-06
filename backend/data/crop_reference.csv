@@ -196,7 +196,7 @@ Acacia brassii,Acacia brassii,Other,22,30,1200,1600,5,6.5,FAO ECOCROP via Zenodo
 Acacia brevispica,Acacia brevispica,Other,20,30,450,700,6.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Acacia burrowii,Acacia burrowii,Other,18,30,500,600,5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Acacia caffra,Acacia caffra,Other,15,35,700,900,5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
-Acacia calcicola,Acacia calcicola,Other,22,32,150,100,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Acacia calcicola,Acacia calcicola,Other,22,32,,,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Acacia cambagei,Acacia cambagei,Other,20,30,200,500,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Acacia cana,Acacia cana,Other,14,30,600,900,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Acacia catechu,Acacia catechu,Other,25,35,700,2100,5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
@@ -278,7 +278,7 @@ Acer saccharum,Acer saccharum,Other,14,24,700,1300,6,6.5,FAO ECOCROP via Zenodo 
 Achnatherum splendens,Achnatherum splendens,Other,8,15,300,400,7,8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Acmena smithii,Acmena smithii,Other,18,28,1000,1700,5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Acokanthera schimperi,Acokanthera schimperi,Other,17,23,500,700,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
-Acorus calamus,Acorus calamus,Other,18,26,7000,2000,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Acorus calamus,Acorus calamus,Other,18,26,,,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Acrocarpus fraxinifolius,Acrocarpus fraxinifolius,Other,28,35,1200,1500,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Acroceras macrum,Acroceras macrum,Other,16,26,800,1500,4.8,5.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Acrocomia aculeata,Acrocomia aculeata,Other,25,35,1000,2000,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
@@ -524,7 +524,6 @@ Bambusa polymorpha,Bambusa polymorpha,Other,22,28,1200,2500,5,6,FAO ECOCROP via 
 Bambusa tulda,Bambusa tulda,Other,22,28,1200,2500,5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Banksia integrifolia,Banksia integrifolia,Other,18,32,850,1600,5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Baphia nitida,Baphia nitida,Other,24,30,1500,2400,5,5.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
-Barringtonia racemosa,Barringtonia racemosa,Other,160,28,500,1500,5.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Basella alba,Basella alba,Other,23,27,2000,2500,5.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Basella rubra,Basella rubra,Other,23,27,2000,2500,5.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Bassia latifolia,Bassia latifolia,Other,20,30,1000,1600,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
@@ -649,7 +648,7 @@ Cardwellia sublimis F.Muell,Cardwellia sublimis F.Muell,Other,22,30,2000,3000,5,
 Carica pubescens,Carica pubescens,Other,17,22,1000,1700,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Cariniaria pyriformis,Cariniaria pyriformis,Other,25,30,2500,3500,5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Carissa carandas,Carissa carandas,Other,23,30,1000,1400,6.5,8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
-Carissa edulis,Carissa edulis,Other,20,35,9000,1300,6.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Carissa edulis,Carissa edulis,Other,20,35,,,6.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Carissa macrocarpa,Carissa macrocarpa,Other,23,28,800,1200,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Carludovica palmata,Carludovica palmata,Other,24,32,1200,1800,5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Carpinus betulus,Carpinus betulus,Other,10,20,500,1000,5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
@@ -1074,7 +1073,6 @@ Eugenia aromatica,Eugenia aromatica,Other,24,34,1500,3600,5,6,FAO ECOCROP via Ze
 Eugenia dombeyi,Eugenia dombeyi,Other,21,32,1200,2500,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Eugenia gustavioides,Eugenia gustavioides,Other,28,32,1400,3800,5.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Eugenia jambos,Eugenia jambos,Other,18,38,1200,1600,5.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
-Eugenia stipitata,Eugenia stipitata,Other,2000,3500,22,30,5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Eugenia suborbiculare,Eugenia suborbiculare,Other,24,38,900,1600,5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Eugenia uniflora,Eugenia uniflora,Other,21,27,1200,2000,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
 Eugenia uvalha,Eugenia uvalha,Other,20,26,450,600,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
