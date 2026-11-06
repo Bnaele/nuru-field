@@ -5,34 +5,29 @@
 // lets you follow up in words. Tabs keep the page compact and make the
 // relationship obvious.
 //
-// Both underlying components (SoilScanner, AdviserChat) are unchanged from
-// the versions that already work.
+// The page is deliberately thin. The scan and chat state live in hooks one level
+// up in App.jsx, because switching tabs unmounts these children and the
+// conversation has to survive that. The page only translates hook state into the
+// flat props SoilScanner and AdviserChat were written against.
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import SoilScanner from '../components/SoilScanner'
 import AdviserChat from '../components/AdviserChat'
 import Icon from '../components/Icon'
 
-export default function ScanPage({
-  // Soil scanner props
-  scanFile,
-  scanPreview,
-  scanResult,
-  scanLoading,
-  scanError,
-  onSelectFile,
-  onScan,
-  onRemove,
-  // Chat props
-  messages,
-  messageInput,
-  chatLoading,
-  chatError,
-  onInputChange,
-  onSend,
-  onPresetQuestion,
-}) {
-  const [activeTab, setActiveTab] = useState('scan')  // 'scan' or 'chat'
+export default function ScanPage({ scan, chat, fieldProfile }) {
+  const [activeTab, setActiveTab] = useState('scan') // 'scan' or 'chat'
+
+  // The photo on its own cannot be identified: a leaf looks the same in
+  // Limpopo and in the Cape. Passing the field summary is what lets the model
+  // say "this looks like blight, common in your area in a wet November" rather
+  // than a generic answer.
+  const handleScan = useCallback(() => {
+    scan.analyse({
+      location: fieldProfile?.location?.label,
+      weatherContext: fieldProfile?.summary,
+    })
+  }, [scan, fieldProfile])
 
   return (
     <main>
@@ -40,15 +35,17 @@ export default function ScanPage({
         <div className="scan-tabs card">
           <div className="scan-tabs-header" role="tablist">
             <button
+              type="button"
               role="tab"
               aria-selected={activeTab === 'scan'}
               className={'scan-tab' + (activeTab === 'scan' ? ' active' : '')}
               onClick={() => setActiveTab('scan')}
             >
               <Icon name="camera" size={17} />
-              Soil scan
+              Field scan
             </button>
             <button
+              type="button"
               role="tab"
               aria-selected={activeTab === 'chat'}
               className={'scan-tab' + (activeTab === 'chat' ? ' active' : '')}
@@ -60,28 +57,31 @@ export default function ScanPage({
           </div>
 
           <div className="scan-tabs-body">
-            {activeTab === 'scan' ? (
+            {/* Both tabs stay mounted and are hidden with CSS, so a half-written
+                question or an analysed photo is not thrown away by a tab click. */}
+            <div hidden={activeTab !== 'scan'}>
               <SoilScanner
-                scanFile={scanFile}
-                scanPreview={scanPreview}
-                scanResult={scanResult}
-                scanLoading={scanLoading}
-                scanError={scanError}
-                onSelectFile={onSelectFile}
-                onScan={onScan}
-                onRemove={onRemove}
+                scanFile={scan.file}
+                scanPreview={scan.preview}
+                scanResult={scan.result}
+                scanLoading={scan.loading}
+                scanError={scan.error}
+                onSelectFile={scan.selectFile}
+                onScan={handleScan}
+                onRemove={scan.clear}
               />
-            ) : (
+            </div>
+            <div hidden={activeTab !== 'chat'}>
               <AdviserChat
-                messages={messages}
-                messageInput={messageInput}
-                chatLoading={chatLoading}
-                chatError={chatError}
-                onInputChange={onInputChange}
-                onSend={onSend}
-                onPresetQuestion={onPresetQuestion}
+                messages={chat.messages}
+                messageInput={chat.input}
+                chatLoading={chat.loading}
+                chatError={chat.error}
+                onInputChange={chat.setInput}
+                onSend={chat.send}
+                onPresetQuestion={chat.send}
               />
-            )}
+            </div>
           </div>
         </div>
       </div>

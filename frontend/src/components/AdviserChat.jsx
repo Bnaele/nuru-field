@@ -31,28 +31,40 @@ export default function AdviserChat({
           </div>
           <div className="messages" aria-live="polite">
             {messages.map((m, i) => (
-              <div className={`message ${m.role}`} key={`${m.role}-${i}`}><span>{m.text}</span></div>
+              <div className={`message ${m.role}${m.failed ? ' failed' : ''}`} key={`${m.role}-${i}`}>
+                <span>{m.text}</span>
+                {m.failed && <em className="message-flag">Not sent</em>}
+              </div>
             ))}
             {chatLoading && <div className="message assistant typing"><span><i /><i /><i /></span></div>}
           </div>
           {messages.length < 3 && (
             <div className="starter-questions">
               {starterQuestions.map((q) => (
-                <button key={q} onClick={() => onPresetQuestion(q)}>
+                <button type="button" key={q} onClick={() => onPresetQuestion(q)}>
                   {q} <Icon name="arrow" size={14} />
                 </button>
               ))}
             </div>
           )}
           {chatError && <p className="form-error chat-error">{chatError}</p>}
-          <form className="chat-form" onSubmit={onSend}>
+          {/* The submit event used to be handed straight to onSend, which takes the
+              message text — so every send called trim() on a FormEvent and threw
+              unless a preset question supplied the text. */}
+          <form
+            className="chat-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onSend()
+            }}
+          >
             <input
               value={messageInput}
               onChange={(e) => onInputChange(e.target.value)}
               placeholder="Ask about your field…"
               aria-label="Ask Nuru a question"
             />
-            <button aria-label="Send question" disabled={!messageInput.trim() || chatLoading}>
+            <button type="submit" aria-label="Send question" disabled={!messageInput.trim() || chatLoading}>
               <Icon name="arrow" size={19} />
             </button>
           </form>

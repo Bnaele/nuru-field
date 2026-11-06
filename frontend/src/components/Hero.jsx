@@ -16,8 +16,11 @@ export default function Hero() {
         </Link>
         <div className="nav-links">
           <Link to="/field">Your field</Link>
-          <Link to="/scan">Soil scan</Link>
-          <Link to="/adviser">AI adviser</Link>
+          {/* These two pointed at /scan and /adviser. The adviser has always lived
+              on /scan, so /adviser only worked by falling through to the catch-all
+              redirect; link straight to the real route. */}
+          <Link to="/scan">Scan</Link>
+          <Link to="/scan">Ask Nuru</Link>
         </div>
         <Link className="nav-action" to="/field">Open dashboard <Icon name="arrow" size={17} /></Link>
       </nav>
@@ -29,7 +32,7 @@ export default function Hero() {
           <p className="hero-lede">Nuru Field brings local conditions, soil observations and practical farming guidance into one simple place—built with smallholder farmers in mind.</p>
           <div className="hero-actions">
             <Link className="button button-primary" to="/field">Explore your field <Icon name="arrow" size={18} /></Link>
-            <Link className="button button-quiet" to="/scan"><Icon name="camera" size={18} /> Scan soil</Link>
+            <Link className="button button-quiet" to="/scan"><Icon name="camera" size={18} /> Scan a photo</Link>
           </div>
           <div className="trust-row">
             <span><Icon name="location" size={17} /> Your location stays in your control</span>

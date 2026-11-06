@@ -12,6 +12,7 @@ const paths = {
   check: <path d="m5 12 4.2 4.2L19 6.5" />,
   upload: <><path d="M12 16V3" /><path d="m7 8 5-5 5 5" /><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></>,
   pulse: <path d="M3 12h3l2-5 4 10 2.5-5H21" />,
+  search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 4.5 4.5" /></>,
 };
 
 export default function Icon({ name, size = 20, stroke = 1.8 }) {

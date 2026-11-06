@@ -1,116 +1,290 @@
-﻿// CropRecommendations — shows 3-5 crops for the picked field.
+﻿// CropRecommendations — crops whose ECOCROP envelope fits this field.
 //
-// How it works:
-//   - Receives lat/lon from App.jsx (set by FieldMap click or geolocation).
-//   - On mount and whenever lat/lon changes, calls the backend's
-//     /api/crops endpoint with those coordinates.
-//   - Backend determines province + current season and returns matching crops.
-//   - Renders them as a card with each crop's name and a one-line detail.
+// Rewritten against the real /api/crops response. The old version expected
+// `{ status, crops }` and deduplicated rows because the backend used to return
+// each crop twice; both are gone, and it now shows the score, the confidence and
+// the reason behind each match, which is the whole point of the endpoint.
 //
-// Backend shape note: the endpoint returns { status: "success", crops: [...] }.
-// It also currently returns each crop twice (data-side bug, tracked separately),
-// so we dedupe on the client until that's fixed.
+// The catalogue is every species ECOCROP can score — 2,066 of them, spanning
+// fruit, vegetables, herbs, spices, nuts, grains, legumes, oilseeds, fodder,
+// fibre, timber, medicinal and ornamental plants. 508 carry a curated common
+// name, so there are three ways in:
+//
+//   * the chips, which filter by category,
+//   * the search box, which matches common name, scientific name, botanical
+//     family or a South African vernacular name (morogo, amadumbe, spanspek)
+//     across the whole catalogue, and
+//   * the "no common name" switch, which widens the list to the 1,558 species
+//     ECOCROP holds under a Latin name.
+//
+// Search deliberately ignores the recommendation score floor: a grower who
+// searches "protea" gets proteas with their score and cautions, not an empty
+// list because proteas are not food.
+//
+// Species with no common name render their botanical family in place of a common
+// name, because "Leguminosae" tells a grower something and a bare Latin binomial
+// does not.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Icon from './Icon'
+import { api } from '../lib/api'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+// The categories present in the reference data. Used only until the first
+// response arrives, after which the chips come from the API's own counts so
+// they can never promise a category that returns nothing. "Other" is left out:
+// it is not a kind of plant, it is a gap in the labelling, and a chip that
+// returns 933 unnamed species is not a filter.
+const FALLBACK_CATEGORIES = [
+  'Legume', 'Timber', 'Fruit', 'Vegetable', 'Spice', 'Ornamental', 'Fodder',
+  'Herb', 'Industrial', 'Grain', 'Medicinal', 'Fibre', 'Beverage', 'Nut',
+  'Staple', 'Oilseed',
+]
+
+const CONFIDENCE_LABEL = {
+  high: 'strong evidence',
+  medium: 'partial evidence',
+  low: 'weak evidence',
+}
+
+const SEARCH_DEBOUNCE_MS = 350
+
+function ScoreBadge({ score }) {
+  const level = score >= 80 ? 'high' : score >= 60 ? 'mid' : 'low'
+  return <span className={`crop-score crop-score-${level}`}>{score}</span>
+}
 
 export default function CropRecommendations({ fieldProfile }) {
-  const [crops, setCrops] = useState([])
+  const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [category, setCategory] = useState(null)
+  const [includeAll, setIncludeAll] = useState(false)
+  const [search, setSearch] = useState('')
+  const [query, setQuery] = useState('')
 
-  // Pull lat/lon out of the field profile. If no field has been picked
-  // yet, don't render anything — the user needs to pick a field first.
-  const lat = fieldProfile?.location?.latitude
-  const lon = fieldProfile?.location?.longitude
+  const latitude = fieldProfile?.location?.latitude
+  const longitude = fieldProfile?.location?.longitude
+
+  // Debounce so a five-letter plant name is one request, not five.
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(search.trim()), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [search])
 
   useEffect(() => {
-    if (!lat || !lon) {
-      setCrops([])
-      return
+    if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
+      setData(null)
+      return undefined
     }
 
-    let cancelled = false  // guard against race conditions when clicking fast
+    let cancelled = false
+    const controller = new AbortController()
 
-    const fetchCrops = async () => {
+    const load = async () => {
       setLoading(true)
       setError('')
       try {
-        const res = await fetch(`${API_BASE_URL}/api/crops?lat=${lat}&lon=${lon}`)
-        if (!res.ok) throw new Error('Crop recommendations are not available yet.')
-        const data = await res.json()
-
-        // Handle both response shapes:
-        //   - { status: 'success', crops: [...] }  (current backend)
-        //   - [...]                                (older/simpler shape)
-        const list = Array.isArray(data) ? data : (data?.crops ?? [])
-
-        // Deduplicate by crop name. The backend currently returns each
-        // crop twice (duplicate seed rows). This is a client-side band-aid
-        // until the DB is cleaned up.
-        const seen = new Set()
-        const unique = list.filter((c) => {
-          const key = c.name || c.crop
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
+        const response = await api.crops(latitude, longitude, {
+          limit: 12,
+          category,
+          includeAll,
+          q: query || undefined,
+          signal: controller.signal,
         })
-
-        if (!cancelled) setCrops(unique)
-      } catch (err) {
-        // Silently ignore "endpoint doesn't exist" errors so this component
-        // stays visible-but-quiet if the backend is down.
+        if (!cancelled) setData(response)
+      } catch (apiError) {
+        if (apiError?.name === 'AbortError') return
         if (!cancelled) {
-          setCrops([])
-          setError('')
+          setError(apiError.message)
+          setData(null)
         }
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
 
-    fetchCrops()
-    return () => { cancelled = true }
-  }, [lat, lon])
+    load()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [latitude, longitude, category, includeAll, query])
 
-  // Don't show the card at all until a field has been picked.
-  if (!lat || !lon) return null
+  const chips = useMemo(() => {
+    const counts = data?.catalogue?.categories
+    if (!counts) return FALLBACK_CATEGORIES.map((name) => ({ name, count: null }))
+    return Object.entries(counts)
+      .filter(([name]) => name !== 'Other')
+      .map(([name, count]) => ({ name, count }))
+  }, [data])
+
+  if (latitude === null || latitude === undefined) return null
+
+  const crops = data?.crops || []
+  const catalogue = data?.catalogue
+  const context = data?.context
+  const searching = query.length > 0
+
+  const handleSearch = (event) => {
+    const value = event.target.value
+    setSearch(value)
+    // A category filter and a name search fight each other: typing a plant name
+    // and being told nothing matched because a stale chip says "Fruit" is the
+    // kind of silent dead end this rewrite exists to remove.
+    if (value.trim()) setCategory(null)
+  }
 
   return (
     <div className="container">
       <div className="crop-recs card">
         <div className="card-label">
-          <span><Icon name="leaf" size={18} /> RECOMMENDED CROPS</span>
+          <span><Icon name="leaf" size={18} /> {searching ? 'CROP SEARCH' : 'RECOMMENDED CROPS'}</span>
+          {catalogue && (
+            <span className="source-label">
+              {searching
+                ? `${catalogue.species_scored} MATCH${catalogue.species_scored === 1 ? '' : 'ES'} OF ${catalogue.species_available} SPECIES`
+                : `${catalogue.species_scored} OF ${catalogue.species_available} SPECIES`}
+            </span>
+          )}
         </div>
+
         <p className="crop-recs-lede">
-          Based on your field location and the current season, these crops
-          suit your conditions:
+          {searching ? (
+            <>
+              Matching any species ECOCROP can score, by common name, scientific
+              name or botanical family.
+            </>
+          ) : (
+            <>
+              Scored against this field&apos;s own measurements
+              {context ? (
+                <>
+                  {' — '}
+                  {context.mean_temperature_c != null && `${context.mean_temperature_c} °C in ${context.month}`}
+                  {context.annual_rainfall_mm != null && `, ${context.annual_rainfall_mm} mm a year`}
+                  {context.soil_ph != null && `, soil pH ${context.soil_ph}`}
+                  {context.soil_texture ? `, ${context.soil_texture}` : ''}
+                  .
+                </>
+              ) : '.'}
+            </>
+          )}
         </p>
 
-        {loading && <p className="crop-loading">Thinking about your field…</p>}
+        {context?.missing_inputs?.length > 0 && !searching && (
+          <p className="crop-context-note">
+            Missing for this location: {context.missing_inputs.join(', ')}. Scores are less
+            certain and say so.
+          </p>
+        )}
 
-        {!loading && crops.length === 0 && !error && (
+        <div className="crop-search">
+          <Icon name="search" size={16} />
+          <input
+            type="search"
+            value={search}
+            onChange={handleSearch}
+            placeholder="Find any plant — mango, sorrel, Acacia, Protea…"
+            aria-label="Search the crop catalogue by name or family"
+          />
+          {search && (
+            <button type="button" className="crop-search-clear" onClick={() => setSearch('')}>
+              Clear
+            </button>
+          )}
+        </div>
+
+        <div className="crop-filters" role="group" aria-label="Filter crops by category">
+          <button
+            type="button"
+            className={`crop-filter ${category === null ? 'active' : ''}`}
+            onClick={() => setCategory(null)}
+          >
+            All
+          </button>
+          {chips.map(({ name, count }) => (
+            <button
+              key={name}
+              type="button"
+              className={`crop-filter ${category === name ? 'active' : ''}`}
+              onClick={() => setCategory(category === name ? null : name)}
+            >
+              {name}
+              {count != null && <span className="crop-filter-count">{count}</span>}
+            </button>
+          ))}
+        </div>
+
+        <label className="crop-catalogue-toggle">
+          <input
+            type="checkbox"
+            checked={includeAll}
+            onChange={(event) => setIncludeAll(event.target.checked)}
+          />
+          <span>
+            Include species with no common name
+            {catalogue ? ` (${catalogue.species_available} in total)` : ''}
+          </span>
+        </label>
+
+        {loading && <p className="crop-loading">Comparing this field with 2,000 crop envelopes…</p>}
+
+        {error && (
+          <p className="card-error" role="alert">
+            <strong>Crops unavailable.</strong> {error}
+          </p>
+        )}
+
+        {!loading && !error && crops.length === 0 && (
           <p className="crop-empty">
-            Crop recommendations aren't available yet. They'll appear here once
-            the backend is ready.
+            {searching ? (
+              <>
+                Nothing in the catalogue matches <strong>{query}</strong>. ECOCROP holds
+                2,066 species, so try a shorter word, a genus (<em>Citrus</em>), a
+                family (<em>Leguminosae</em>) or a local name (<em>morogo</em>).
+              </>
+            ) : (
+              <>
+                Nothing matched {category ? `${category.toLowerCase()} crops ` : ''}with enough
+                confidence. Try <em>All</em>, or include species with no common name.
+              </>
+            )}
           </p>
         )}
 
         {crops.length > 0 && (
           <ul className="crop-list">
-            {crops.map((crop) => (
-              <li key={crop.id || crop.name}>
-                <strong>{crop.name}</strong>
-                <span>
-                  {crop.category}
-                  {crop.growing_season && ` · ${crop.growing_season}`}
-                  {crop.optimal_soil_ph != null && ` · pH ${crop.optimal_soil_ph}`}
-                </span>
-              </li>
-            ))}
+            {crops.map((crop) => {
+              const named = crop.name !== crop.scientific_name
+              return (
+                <li key={`${crop.name}-${crop.scientific_name}`}>
+                  <ScoreBadge score={crop.score} />
+                  <div className="crop-body">
+                    <strong>{crop.name}</strong>
+                    {/* An unnamed species shows its family instead of repeating
+                        the Latin binomial that is already the heading. */}
+                    <em className="crop-latin">
+                      {named ? crop.scientific_name : crop.family || 'No common name in ECOCROP'}
+                    </em>
+                    <span className="crop-meta">
+                      {crop.category} · {CONFIDENCE_LABEL[crop.confidence] || crop.confidence}
+                    </span>
+                    {crop.reasons?.[0] && <span className="crop-reason">{crop.reasons[0]}</span>}
+                    {crop.cautions?.[0] && (
+                      <span className="crop-caution">{crop.cautions[0]}</span>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
           </ul>
+        )}
+
+        {data?.source && (
+          <p className="crop-source">
+            {data.source.name}. {data.source.method} Score 0-100.
+            {data.source.cached ? ' Cached for this field.' : ''}
+          </p>
         )}
       </div>
     </div>

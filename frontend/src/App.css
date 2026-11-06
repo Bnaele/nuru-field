@@ -736,3 +736,390 @@
 .config-notice-danger code { background:#fecaca; color:#7f1d1d; }
 .config-notice-footnote { margin-bottom:0; padding-top:20px; border-top:1px solid var(--line); font-size:12.5px; }
 @media (max-width:620px) { .config-notice { padding:28px 16px; }.config-notice-inner { padding:28px 24px; } }
+
+/* --- Session loading state ---------------------------------------------- */
+/* App.jsx renders this while Supabase reads the stored session. Without a rule
+   it was an unstyled paragraph pinned to the top-left of the viewport. */
+.app-loading {
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* --- Soil card: SoilGrids has no prediction for this point --------------- */
+.soil-unavailable {
+  margin-top: 2.2rem;
+}
+
+.soil-unavailable h3 {
+  margin: 0 0 0.6rem;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.3rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.soil-unavailable p {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.soil-unavailable-hint {
+  padding-top: 0.7rem;
+  border-top: 1px solid #e2e5db;
+  color: #6b7f70;
+  font-size: 0.78rem;
+}
+
+/* --- Crop recommendations ------------------------------------------------ */
+.crop-recs {
+  margin-top: 1.5rem;
+  padding: 1.5rem 1.6rem 1.6rem;
+}
+
+.crop-recs-lede {
+  max-width: 72ch;
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+/* Says which inputs were missing, so a thin result does not look like a thin
+   catalogue. */
+.crop-context-note {
+  margin: 0.85rem 0 0;
+  padding: 0.6rem 0.8rem;
+  background: #fdf6df;
+  border: 1px solid #efe0b4;
+  border-radius: 8px;
+  color: #7a5a12;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.crop-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 1.15rem 0 0.9rem;
+}
+
+.crop-filter {
+  padding: 0.3rem 0.72rem;
+  background: var(--paper);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.crop-filter:hover {
+  color: var(--moss);
+  border-color: var(--leaf);
+}
+
+.crop-filter.active {
+  background: var(--moss);
+  border-color: var(--moss);
+  color: var(--cream);
+}
+
+.crop-filter-count {
+  margin-left: 0.35rem;
+  opacity: 0.55;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+/* Search reaches the whole catalogue, so it sits above the chips rather than
+   inside them: it is not one more filter, it is the other way in. */
+.crop-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 460px;
+  margin: 1.15rem 0 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.crop-search svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.crop-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.crop-search input::placeholder {
+  color: var(--muted);
+}
+
+.crop-search-clear {
+  flex-shrink: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--leaf);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.crop-search-clear:hover {
+  text-decoration: underline;
+}
+
+.crop-catalogue-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0 0 1.1rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.crop-catalogue-toggle input {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  accent-color: var(--moss);
+}
+
+.crop-loading,
+.crop-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0.75rem 0;
+}
+
+.crop-empty em {
+  color: var(--moss);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.crop-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+  gap: 0.6rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.crop-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.75rem 0.85rem;
+  background: var(--paper);
+  border: 1px solid var(--mist);
+  border-radius: 10px;
+}
+
+.crop-score {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+
+.crop-score-high {
+  background: #dcecd0;
+  color: #2f5a2c;
+}
+
+.crop-score-mid {
+  background: #f3edd2;
+  color: #6f5a12;
+}
+
+.crop-score-low {
+  background: #f6e5dc;
+  color: #8c4934;
+}
+
+.crop-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.crop-body strong {
+  color: var(--ink);
+  font-size: 0.94rem;
+  line-height: 1.25;
+}
+
+.crop-latin {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+.crop-meta {
+  color: #8b988b;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.crop-reason {
+  margin-top: 0.2rem;
+  color: #3f5849;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.crop-caution {
+  color: #8c4934;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.crop-source {
+  margin: 1.1rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  color: #8b988b;
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+/* --- Market snapshot controls -------------------------------------------- */
+/* .card carries no padding of its own; the older rules assumed a padded
+   ancestor that the field page no longer provides. */
+.market-card {
+  padding: 1.5rem 1.6rem 1.4rem;
+}
+
+.market-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.market-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 220px;
+  max-width: 330px;
+  padding: 0.45rem 0.7rem;
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.market-search svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.market-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.88rem;
+}
+
+.market-search input::placeholder {
+  color: var(--muted);
+}
+
+.market-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.market-toggle input {
+  accent-color: var(--moss);
+}
+
+.market-untraded {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.market-source {
+  margin: 1rem 0 0;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+  color: #8b988b;
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.market-source a {
+  color: var(--moss);
+  text-decoration: underline;
+}
+
+/* --- Watering reminders footer note -------------------------------------- */
+.watering-note {
+  margin: 1rem 0 0;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+/* --- Adviser chat: a message the API rejected ---------------------------- */
+/* The question stays on screen on purpose, so it is marked rather than
+   removed and retyped. */
+.message.failed span {
+  box-shadow: inset 0 0 0 1px #e8b4b4;
+}
+
+.message-flag {
+  display: block;
+  margin-top: 0.3rem;
+  color: #a45036;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.6rem;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

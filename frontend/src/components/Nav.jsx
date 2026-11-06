@@ -14,7 +14,7 @@ export default function Nav({ onSignOut }) {
   return (
     <nav className="app-nav">
       <div className="container app-nav-inner">
-        <Link to="/field" className="app-nav-brand">
+        <Link to="/field" className="app-nav-brand" aria-label="Nuru Field dashboard">
           <span className="brand-mark"><Icon name="leaf" size={20} /></span>
           <span>NURU<span className="brand-sub">FIELD</span></span>
         </Link>
@@ -34,7 +34,7 @@ export default function Nav({ onSignOut }) {
           </NavLink>
         </div>
 
-        <button className="app-nav-signout" onClick={onSignOut}>
+        <button type="button" className="app-nav-signout" onClick={onSignOut} aria-label="Sign out of Nuru Field">
           Sign out
         </button>
       </div>

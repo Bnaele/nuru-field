@@ -1,63 +1,64 @@
-﻿// MyPlants — add, view, and delete plants. Writes to the same
-// localStorage key that WateringReminders reads from ("nuru.plants"),
-// so the two components stay in sync automatically.
+﻿// MyPlants — add, view and remove tracked plants.
 //
-// Data shape per plant:
-//   { id, name, cropType, plantingDate, lastWatered, createdAt }
+// Plants now live in Postgres, keyed to the signed-in user. They used to live in
+// localStorage, so clearing the browser or opening a different device lost every
+// plant and every watering reminder with it.
+//
+// The crop field is free text with suggestions rather than a fixed dropdown: the
+// crop catalogue covers 2,066 species, and a 26-item list would have made most
+// of them impossible to record.
 
 import { useState } from 'react'
 import Icon from './Icon'
-import { useLocalStorage } from '../lib/useLocalStorage'
+import { stageFromDate } from '../hooks/usePlants'
 
-// A short, curated list of SA staple crops. Keeps the demo tidy and
-// avoids the messy "any string is fine" problem.
-const CROP_OPTIONS = [
-  'Maize', 'Wheat', 'Sorghum', 'Sunflower',
-  'Spinach', 'Cabbage', 'Carrots', 'Tomatoes', 'Onions', 'Potatoes',
-  'Beans', 'Peas', 'Pumpkin', 'Butternut',
-  'Grapes', 'Citrus', 'Mango', 'Avocado',
-  'Other',
+const SUGGESTIONS = [
+  'Maize', 'Wheat', 'Sorghum', 'Sunflower', 'Spinach', 'Cabbage', 'Carrot',
+  'Tomato', 'Onion', 'Potato', 'Dry beans', 'Peas', 'Pumpkin', 'Butternut',
+  'Grape', 'Citrus', 'Mango', 'Avocado', 'Marula', 'Olive', 'Strawberry',
+  'Peach', 'Chilli', 'Herb', 'Fodder',
 ]
 
-// Turn a planting date into a rough "how far along" description.
-// Weeks-based because that's how farmers talk about a crop's age.
-function stageFromDate(plantingDate) {
-  if (!plantingDate) return 'planted'
-  const planted = new Date(plantingDate).getTime()
-  const weeks = Math.floor((Date.now() - planted) / (7 * 24 * 60 * 60 * 1000))
-  if (weeks < 2) return 'just planted'
-  if (weeks < 6) return `growing (${weeks}w)`
-  if (weeks < 12) return `established (${weeks}w)`
-  return `ready soon (${weeks}w)`
-}
+const today = () => new Date().toISOString().split('T')[0]
 
-export default function MyPlants() {
-  const [plants, setPlants] = useLocalStorage('nuru.plants', [])
+export default function MyPlants({ plants: store }) {
+  const { plants, loading, error, addPlant, removePlant } = store
+
   const [name, setName] = useState('')
-  const [cropType, setCropType] = useState(CROP_OPTIONS[0])
-  const [plantingDate, setPlantingDate] = useState(
-    new Date().toISOString().split('T')[0],  // today
-  )
+  const [cropType, setCropType] = useState('')
+  const [plantingDate, setPlantingDate] = useState(today())
+  const [busy, setBusy] = useState(false)
+  const [formError, setFormError] = useState('')
 
-  const addPlant = (e) => {
-    e.preventDefault()
-    if (!name.trim()) return
-    const newPlant = {
-      id: crypto.randomUUID(),  // built-in browser UUID generator
-      name: name.trim(),
-      cropType,
-      plantingDate,
-      lastWatered: null,
-      createdAt: new Date().toISOString(),
+  const handleAdd = async (event) => {
+    event.preventDefault()
+    if (!name.trim() || busy) return
+
+    setBusy(true)
+    setFormError('')
+    try {
+      await addPlant({
+        name: name.trim(),
+        cropType: cropType.trim(),
+        plantingDate,
+      })
+      // Keep the date: someone adding several beds usually planted them together.
+      setName('')
+      setCropType('')
+    } catch (addError) {
+      setFormError(addError.message)
+    } finally {
+      setBusy(false)
     }
-    setPlants((current) => [newPlant, ...current])
-    // Reset the form but keep the date (user probably adds several at once).
-    setName('')
-    setCropType(CROP_OPTIONS[0])
   }
 
-  const deletePlant = (id) => {
-    setPlants((current) => current.filter((p) => p.id !== id))
+  const handleRemove = async (plant) => {
+    setFormError('')
+    try {
+      await removePlant(plant.id)
+    } catch (removeError) {
+      setFormError(removeError.message)
+    }
   }
 
   return (
@@ -65,20 +66,17 @@ export default function MyPlants() {
       <div className="my-plants card">
         <div className="card-label">
           <span><Icon name="leaf" size={18} /> MY PLANTS</span>
-          {plants.length > 0 && (
-            <span className="plant-count">{plants.length}</span>
-          )}
+          {plants.length > 0 && <span className="plant-count">{plants.length}</span>}
         </div>
 
-        {/* Add plant form */}
-        <form className="plant-add-form" onSubmit={addPlant}>
+        <form className="plant-add-form" onSubmit={handleAdd}>
           <div className="plant-add-row">
             <label>
-              <span>Name</span>
+              <span>Label</span>
               <input
                 type="text"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(event) => setName(event.target.value)}
                 placeholder="e.g. Back garden bed 1"
                 maxLength={60}
                 required
@@ -86,43 +84,60 @@ export default function MyPlants() {
             </label>
             <label>
               <span>Crop</span>
-              <select value={cropType} onChange={(e) => setCropType(e.target.value)}>
-                {CROP_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <input
+                type="text"
+                value={cropType}
+                onChange={(event) => setCropType(event.target.value)}
+                placeholder="Any crop, e.g. Tomato"
+                maxLength={60}
+                list="crop-suggestions"
+              />
+              <datalist id="crop-suggestions">
+                {SUGGESTIONS.map((crop) => <option key={crop} value={crop} />)}
+              </datalist>
             </label>
             <label>
               <span>Planted</span>
               <input
                 type="date"
                 value={plantingDate}
-                onChange={(e) => setPlantingDate(e.target.value)}
+                max={today()}
+                onChange={(event) => setPlantingDate(event.target.value)}
               />
             </label>
-            <button type="submit" className="plant-add-button">
-              <Icon name="leaf" size={16} /> Add plant
+            <button type="submit" className="plant-add-button" disabled={busy}>
+              <Icon name="leaf" size={16} /> {busy ? 'Adding…' : 'Add plant'}
             </button>
           </div>
         </form>
 
-        {/* Plants list */}
-        {plants.length === 0 ? (
+        {(formError || error) && (
+          <p className="form-error" role="alert">{formError || error}</p>
+        )}
+
+        {loading && <p className="plant-empty">Loading your plants…</p>}
+
+        {!loading && plants.length === 0 && !error && (
           <p className="plant-empty">
-            No plants yet. Add your first one above and it'll appear in the
-            watering reminders below.
+            No plants yet. Add your first one above and it will appear in the watering
+            reminders below.
           </p>
-        ) : (
+        )}
+
+        {plants.length > 0 && (
           <ul className="plant-list">
             {plants.map((plant) => (
               <li key={plant.id}>
                 <div className="plant-info">
                   <strong>{plant.name}</strong>
                   <span className="plant-meta">
-                    {plant.cropType} · {stageFromDate(plant.plantingDate)}
+                    {plant.crop_type || 'crop not set'} · {stageFromDate(plant.planting_date)}
                   </span>
                 </div>
                 <button
                   className="plant-delete"
-                  onClick={() => deletePlant(plant.id)}
+                  type="button"
+                  onClick={() => handleRemove(plant)}
                   aria-label={`Delete ${plant.name}`}
                   title="Remove plant"
                 >

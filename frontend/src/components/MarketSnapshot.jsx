@@ -1,99 +1,162 @@
-﻿// MarketSnapshot — shows SA market prices for crops relevant to the picked
-// field's province. Appears after a location is chosen.
+﻿// MarketSnapshot — fresh produce prices from the Joburg Market daily sheet.
 //
-// Data comes from /api/market-snapshot?lat=&lon=, which maps the coordinates
-// to a province and returns that province's market rows. Falls back to a
-// national snapshot when the province can't be determined.
+// Rewritten. The old version called /api/market-snapshot, an endpoint that no
+// longer exists, and expected rows shaped `{ crop_name, demand_level }` from a
+// seeded table. The real sheet gives a commodity name, a realised price per
+// kilogram, kilograms sold, and the date it applies to.
 //
-// Prices are illustrative, not live feeds — labelled clearly in the card.
+// The "demand" column is gone on purpose. The sheet reports what traded, not
+// whether demand is high, and inventing a label from it would be guesswork.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
+import { api } from '../lib/api'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+function kilograms(value) {
+  if (value === null || value === undefined) return null
+  const tonnes = Number(value) / 1000
+  if (!Number.isFinite(tonnes)) return null
+  return tonnes >= 1 ? `${tonnes.toFixed(1)} t` : `${Math.round(Number(value))} kg`
+}
 
-export default function MarketSnapshot({ fieldProfile }) {
-  const [rows, setRows] = useState([])
-  const [meta, setMeta] = useState(null)
-  const [loading, setLoading] = useState(false)
+export default function MarketSnapshot() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  const [includeUnsold, setIncludeUnsold] = useState(false)
 
-  const lat = fieldProfile?.location?.latitude
-  const lon = fieldProfile?.location?.longitude
+  // Debounce so typing "tomato" is one request, not six.
+  const debounceRef = useRef(null)
+  const [debouncedQuery, setDebouncedQuery] = useState('')
 
   useEffect(() => {
-    if (!lat || !lon) {
-      setRows([])
-      setMeta(null)
-      return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => setDebouncedQuery(query.trim()), 350)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
     }
+  }, [query])
 
+  useEffect(() => {
     let cancelled = false
+    const controller = new AbortController()
 
-    const fetchMarket = async () => {
+    const load = async () => {
       setLoading(true)
+      setError('')
       try {
-        const res = await fetch(`${API_BASE_URL}/api/market-snapshot?lat=${lat}&lon=${lon}`)
-        if (!res.ok) throw new Error('Market snapshot not available.')
-        const data = await res.json()
+        const response = await api.marketPrices({
+          q: debouncedQuery || undefined,
+          limit: 24,
+          includeUnsold,
+          signal: controller.signal,
+        })
+        if (!cancelled) setData(response)
+      } catch (apiError) {
+        if (apiError?.name === 'AbortError') return
         if (!cancelled) {
-          setRows(data.market || [])
-          setMeta({ province: data.province, location: data.market_location })
+          setError(apiError.message)
+          setData(null)
         }
-      } catch {
-        if (!cancelled) { setRows([]); setMeta(null) }
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
 
-    fetchMarket()
-    return () => { cancelled = true }
-  }, [lat, lon])
+    load()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [debouncedQuery, includeUnsold])
 
-  if (!lat || !lon) return null
+  const rows = data?.rows || []
 
   return (
     <div className="container">
       <div className="market-card card">
         <div className="card-label">
-          <span><Icon name="leaf" size={18} /> MARKET SNAPSHOT</span>
-          {meta?.location && <span className="source-label">{meta.location}</span>}
+          <span><Icon name="leaf" size={18} /> MARKET PRICES</span>
+          {data?.as_of_label && <span className="source-label">AS OF {data.as_of_label.toUpperCase()}</span>}
         </div>
+
         <p className="market-lede">
-          Indicative prices for crops grown in{' '}
-          {meta?.province ? <strong>{meta.province}</strong> : 'your region'}.
-          Not a live market feed — use as a rough guide only.
+          What fresh produce actually sold for at Joburg Market on{' '}
+          {data?.as_of_label || 'the latest trading day'}. Prices are the day&apos;s total
+          value divided by kilograms sold — realised averages, not asking prices.
         </p>
 
-        {loading && <p className="market-loading">Fetching prices…</p>}
+        <div className="market-controls">
+          <label className="market-search">
+            <Icon name="search" size={15} />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search a commodity, e.g. tomato"
+              aria-label="Search market prices"
+            />
+          </label>
+          <label className="market-toggle">
+            <input
+              type="checkbox"
+              checked={includeUnsold}
+              onChange={(event) => setIncludeUnsold(event.target.checked)}
+            />
+            Include produce that did not trade
+          </label>
+        </div>
 
-        {!loading && rows.length === 0 && (
-          <p className="market-empty">No market data available for this location yet.</p>
+        {loading && <p className="market-loading">Reading the Joburg Market sheet…</p>}
+
+        {error && (
+          <p className="card-error" role="alert">
+            <strong>Prices unavailable.</strong> {error}
+          </p>
+        )}
+
+        {!loading && !error && rows.length === 0 && (
+          <p className="market-empty">
+            {debouncedQuery
+              ? `Nothing on today's sheet matches "${debouncedQuery}".`
+              : 'No traded prices on the sheet today. Try including produce that did not trade.'}
+          </p>
         )}
 
         {rows.length > 0 && (
           <table className="market-table">
             <thead>
               <tr>
-                <th>Crop</th>
-                <th>Price / kg</th>
-                <th>Demand</th>
+                <th>Commodity</th>
+                <th>R / kg</th>
+                <th>Sold</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.crop_name}</td>
-                  <td>R{Number(row.price_per_kg).toFixed(2)}</td>
+                <tr key={row.commodity}>
+                  <td>{row.commodity}</td>
                   <td>
-                    <span className={`demand-badge demand-${(row.demand_level || '').toLowerCase()}`}>
-                      {row.demand_level}
-                    </span>
+                    {row.price_per_kg !== null
+                      ? `R${Number(row.price_per_kg).toFixed(2)}`
+                      : <span className="market-untraded">did not trade</span>}
                   </td>
+                  <td>{kilograms(row.total_kg_sold) || '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+
+        {data && (
+          <p className="market-source">
+            {data.market || 'Joburg Market'} · {data.listed_count} commodities listed,{' '}
+            {data.traded_count} traded.
+            {data.source_url && (
+              <> <a href={data.source_url} target="_blank" rel="noreferrer">Source sheet</a></>
+            )}
+          </p>
         )}
       </div>
     </div>
