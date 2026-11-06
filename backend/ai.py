@@ -24,6 +24,10 @@ from config import GEMINI_API_KEY, GEMINI_MODEL
 # tiny free-tier quotas, so the fallback stays on 3.x flash.
 FALLBACK_MODELS = ["gemini-3.6-flash"]
 
+# Ceiling for the empty-response retry in answer(). One advisor reply fits in a
+# few hundred tokens; 2,048 leaves room for the model's own reasoning on top.
+MAX_RETRY_BUDGET = 2048
+
 ADVISER_SYSTEM_PROMPT = """You are Nuru, a thoughtful agricultural field adviser for smallholder and first-time farmers, with a focus on South Africa while remaining useful globally.
 Give practical, concise, plain-language advice. Explain uncertainty. You are not a substitute for a local agronomist, soil laboratory, veterinarian, or pesticide label. Never invent local records, disease diagnoses, exact chemical rates, soil nutrient values, or legal requirements. For potentially serious plant disease, pesticide, fertiliser, livestock, food-safety, or weather-risk questions, clearly say when to consult a local extension officer, certified agronomist, or other appropriate professional. Use metric units. Keep answers to a short helpful paragraph followed by 3-5 next steps when useful."""
 
@@ -116,6 +120,7 @@ async def answer(
     # Deduplicate while keeping order: if GEMINI_MODEL is overridden to the same
     # name as a fallback we would otherwise retry one model eight times.
     models = list(dict.fromkeys([GEMINI_MODEL, *FALLBACK_MODELS]))
+    budget = max_output_tokens
     for model_name in models:
         for attempt in range(4):
             try:
@@ -126,12 +131,21 @@ async def answer(
                     config=types.GenerateContentConfig(
                         system_instruction=ADVISER_SYSTEM_PROMPT,
                         temperature=temperature,
-                        max_output_tokens=max_output_tokens,
+                        max_output_tokens=budget,
                     ),
                 )
                 text = (response.text or "").strip()
                 if text:
                     return text
+                # These models reason before they answer, and the reasoning is
+                # charged to the same output budget. A tight cap is therefore
+                # spent entirely on thinking and comes back as empty text, which
+                # the caller then reported as "the AI service could not complete
+                # that request" — a service failure for what is really a budget
+                # one. Doubling and retrying tells the two apart.
+                if budget < MAX_RETRY_BUDGET:
+                    budget = min(budget * 2, MAX_RETRY_BUDGET)
+                    continue
                 last_error = "empty response"
                 break
             except Exception as error:
@@ -150,6 +164,11 @@ async def answer(
         raise HTTPException(
             status_code=503,
             detail="The AI is temporarily overloaded. Please try again in a moment.",
+        )
+    if last_error == "empty response":
+        raise HTTPException(
+            status_code=502,
+            detail="The AI returned no answer for that request. Try asking in fewer words.",
         )
     raise HTTPException(
         status_code=502,
