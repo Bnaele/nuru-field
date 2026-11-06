@@ -22,12 +22,18 @@ from __future__ import annotations
 from calendar import month_name as MONTH_NAMES
 from datetime import date, timedelta
 
-from cache import Served, cached_call, coord_key, weather_cache
-from config import HISTORY_TTL_S, LIVE_TTL_S, OPEN_METEO_ARCHIVE, OPEN_METEO_FORECAST
+from config import OPEN_METEO_ARCHIVE, OPEN_METEO_FORECAST
 from sources.http import UpstreamError, get_json
 
 SOURCE_NAME = "Open-Meteo"
 ATTRIBUTION = "Weather data by Open-Meteo.com (CC BY 4.0)"
+
+# Shown by the dashboard under the seasonal numbers, alongside the identical note
+# from any other provider, so the text does not change when the source does.
+NOTE = (
+    "Averages of the last ten years of modelled historical weather. "
+    "This is a climate normal, not a drought or flood record."
+)
 
 # ECMWF archive lags real time by about five days; asking for later dates returns
 # nulls rather than an error, which would quietly corrupt the climate normal.
@@ -62,7 +68,7 @@ def _mean(values: list[float]) -> float | None:
     return round(sum(usable) / len(usable), 1) if usable else None
 
 
-async def _fetch_forecast(latitude: float, longitude: float) -> dict:
+async def fetch_forecast(latitude: float, longitude: float) -> dict:
     payload = await get_json(
         OPEN_METEO_FORECAST,
         params={
@@ -100,7 +106,7 @@ async def _fetch_forecast(latitude: float, longitude: float) -> dict:
     }
 
 
-async def _fetch_climate(latitude: float, longitude: float) -> dict:
+async def fetch_climate(latitude: float, longitude: float) -> dict:
     """Ten years of daily values, aggregated into the signals we actually use."""
     end = date.today() - timedelta(days=ARCHIVE_LAG_DAYS)
     start = end.replace(year=end.year - CLIMATE_YEARS)
@@ -181,40 +187,5 @@ async def _fetch_climate(latitude: float, longitude: float) -> dict:
             if same_month_rain else None
         ),
         "same_month_years": len(same_month_rain),
+        "note": NOTE,
     }
-
-
-async def get_field_climate(latitude: float, longitude: float) -> tuple[dict, bool]:
-    """Live conditions plus climate normals for a coordinate.
-
-    Returns (payload, served_from_cache). One upstream pair per coordinate per
-    cache window, no matter how many components ask for it.
-    """
-    cache_key = coord_key(latitude, longitude)
-
-    forecast: Served = await cached_call(
-        weather_cache,
-        namespace="forecast",
-        key=cache_key,
-        ttl=LIVE_TTL_S,
-        producer=lambda: _fetch_forecast(latitude, longitude),
-    )
-    climate: Served = await cached_call(
-        weather_cache,
-        namespace="climate",
-        key=cache_key,
-        ttl=HISTORY_TTL_S,
-        producer=lambda: _fetch_climate(latitude, longitude),
-    )
-
-    payload = {
-        "current": forecast.value,
-        "climate": climate.value,
-        "source": {
-            "name": SOURCE_NAME,
-            "attribution": ATTRIBUTION,
-            "licence": "CC BY 4.0 (non-commercial)",
-            "cached": forecast.cached and climate.cached,
-        },
-    }
-    return payload, (forecast.cached and climate.cached)

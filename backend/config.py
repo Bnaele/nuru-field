@@ -51,6 +51,11 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 # signup: only Supabase and Gemini require credentials.
 OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
+# Standbys for when Open-Meteo's per-IP free quota is spent by a neighbouring
+# tenant on a shared cloud address. Both are keyless and served for programmatic
+# use; see sources/weather.py for the order they are tried in.
+METNO_FORECAST = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
+NASA_POWER_CLIMATOLOGY = "https://power.larc.nasa.gov/api/temporal/climatology/point"
 SOILGRIDS_ENDPOINT = "https://rest.isric.org/soilgrids/v2.0/properties/query"
 NOMINATIM_REVERSE = "https://nominatim.openstreetmap.org/reverse"
 JOBURG_MARKET_URL = "https://joburgmarket.co.za/jhb-market/dailyprices.php"

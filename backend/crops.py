@@ -65,7 +65,7 @@ from pathlib import Path
 
 from config import current_season
 from sources.http import UpstreamError
-from sources.open_meteo import get_field_climate
+from sources.weather import get_field_climate
 from sources.soilgrids import get_soil_profile
 
 REFERENCE_CSV = Path(__file__).with_name("data") / "crop_reference.csv"

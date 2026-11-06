@@ -41,8 +41,8 @@ from geo import resolve_region
 from ratelimit import chat_limiter, photo_analysis_limiter
 from sources.http import UpstreamError
 from sources.joburg_market import get_market_prices
-from sources.open_meteo import get_field_climate
 from sources.soilgrids import get_soil_profile
+from sources.weather import get_field_climate
 
 app = FastAPI(
     title="Nuru Field API",
@@ -127,7 +127,7 @@ async def health() -> dict:
         "ai_configured": ai.is_configured(),
         "database_configured": db.is_configured(),
         "sources": {
-            "weather": "Open-Meteo (keyless)",
+            "weather": "Open-Meteo (keyless), MET Norway and NASA POWER as standbys",
             "soil": "ISRIC SoilGrids (keyless)",
             "geocoding": "OpenStreetMap Nominatim (keyless)",
             "prices": "Joburg Market daily sheet",
@@ -232,8 +232,8 @@ async def field_profile(latitude: Lat, longitude: Lon) -> dict:
             "annual_rainfall_mm": climate.get("annual_rainfall_mm"),
             "years_used": climate.get("years_used"),
             "years_span": climate.get("years_span"),
-            "note": (
-                "Averages of the last ten years of modelled historical weather. "
+            "note": climate.get("note") or (
+                "Averages of recent modelled historical weather. "
                 "This is a climate normal, not a drought or flood record."
             ),
         },
