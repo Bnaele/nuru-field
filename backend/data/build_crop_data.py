@@ -26,16 +26,24 @@ Coverage
 --------
 Every taxon in the archive with a usable envelope is included — not a hand-picked
 shortlist. Of the 2,567 taxa, 2,071 carry a complete temperature pair; two of
-those are rejected as impossible (see PLAUSIBLE), and de-duplication by common
-name removes two more, leaving 2,065 rows. That set spans fruit, vegetables,
-herbs, spices, nuts, grains, legumes, oilseeds, fodder, fibre, timber, medicinal
-and ornamental plants.
+those are rejected as impossible (see PLAUSIBLE), and three pairs of synonyms
+that share a common name are merged, leaving 2,066 rows. That set spans fruit,
+vegetables, herbs, spices, nuts, grains, legumes, oilseeds, fodder, fibre, timber,
+medicinal and ornamental plants.
 
 The archive only carries scientific names, so common names are supplied for the
-species a South African grower is likely to search for (see CURATED_NAMES).
-Everything else keeps its scientific name as the display name rather than being
+species a grower is likely to search for (see CURATED_NAMES) — 508 of the 2,066.
+The other 1,558 keep their scientific name as the display name rather than being
 dropped, because "I cannot name this in English" is not a reason to hide a plant
-that has a real envelope. A row whose name is still Latin is visible as such.
+that has a real envelope. A row whose name is still Latin is visible as such, and
+the catalogue can be searched by scientific name or family to reach it.
+
+Two more columns make those unnamed rows usable. `family` is the botanical
+family straight from the archive. `category` falls back to a genus or family
+grouping (GENUS_CATEGORIES, FAMILY_CATEGORIES) where the plant's use is not in
+doubt: 111 Eucalyptus species are timber, and every Leguminosae is a legume. That
+still leaves 933 species under "Other" — mostly grasses, palms and 174 taxa the
+archive carries no family for. They are browsable rather than hidden.
 
 Source data is not trusted blindly. A handful of values in the archive are
 transcription errors — a minimum temperature of 160 C, a 9000 mm rainfall
@@ -95,7 +103,7 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Secale cereale": ("Rye", "Grain"),
     "Sorghum bicolor": ("Sorghum", "Grain"),
     "Pennisetum glaucum": ("Pearl millet", "Grain"),
-    "Eleusine coracana": ("Finger millet", "Grain"),
+    "Eleusine coracana ssp. coracana": ("Finger millet", "Grain"),
     "Eragrostis tef": ("Teff", "Grain"),
     "Oryza sativa": ("Rice", "Grain"),
     "Oryza glaberrima": ("African rice", "Grain"),
@@ -151,32 +159,34 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Saccharum officinarum": ("Sugarcane", "Industrial"),
     "Beta vulgaris var. saccharifera": ("Sugar beet", "Industrial"),
     # --- leafy vegetables ---
+    # ECOCROP indexes the cultivated form rather than the species for several
+    # brassicas and for lettuce. These keys are the archive's own strings: a
+    # curated entry only lands when it matches one, so "Brassica oleracea" on its
+    # own named nothing and kale sat in the catalogue as Latin.
     "Spinacia oleracea": ("Spinach", "Vegetable"),
     "Beta vulgaris": ("Beetroot", "Vegetable"),
     "Beta vulgaris var. cicla": ("Swiss chard", "Vegetable"),
-    "Lactuca sativa": ("Lettuce", "Vegetable"),
+    "Beta vulgaris var. flavescens": ("Spinach beet", "Vegetable"),
     "Lactuca sativa var. capitata": ("Lettuce", "Vegetable"),
     "Brassica oleracea var. capitata": ("Cabbage", "Vegetable"),
     "Brassica oleracea var. botrytis": ("Cauliflower", "Vegetable"),
     "Brassica oleracea var. italica": ("Broccoli", "Vegetable"),
     "Brassica oleracea var. gemmifera": ("Brussels sprouts", "Vegetable"),
-    "Brassica oleracea var. gongylodes": ("Kohlrabi", "Vegetable"),
-    "Brassica oleracea var. viridis": ("Kale", "Vegetable"),
-    "Brassica rapa": ("Turnip", "Vegetable"),
-    "Brassica pekinensis": ("Chinese cabbage", "Vegetable"),
+    "Brassica oleracea var. gongyloides": ("Kohlrabi", "Vegetable"),
+    "Brassica oleracea var. acephala": ("Kale", "Vegetable"),
+    "Brassica rapa Gaisin gr.": ("Chinese cabbage", "Vegetable"),
+    "Brassica napus var. napobrassica": ("Swede", "Vegetable"),
+    "Brassica campestris": ("Turnip rape", "Oilseed"),
+    "Brassica carinata": ("Ethiopian mustard", "Oilseed"),
     "Brassica chinensis": ("Pak choi", "Vegetable"),
     "Brassica nigra": ("Black mustard", "Spice"),
-    "Eruca vesicaria": ("Rocket", "Vegetable"),
     "Cichorium intybus": ("Chicory", "Vegetable"),
     "Cichorium endivia": ("Endive", "Vegetable"),
     "Apium graveolens": ("Celery", "Vegetable"),
-    "Apium graveolens var. dulce": ("Celery", "Vegetable"),
     "Petroselinum crispum": ("Parsley", "Herb"),
     "Coriandrum sativum": ("Coriander", "Herb"),
     "Anethum graveolens": ("Dill", "Herb"),
     "Foeniculum vulgare": ("Fennel", "Herb"),
-    "Mentha spicata": ("Spearmint", "Herb"),
-    "Mentha x piperita": ("Peppermint", "Herb"),
     "Ocimum basilicum": ("Basil", "Herb"),
     "Thymus vulgaris": ("Thyme", "Herb"),
     "Origanum vulgare": ("Oregano", "Herb"),
@@ -186,8 +196,15 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Lavandula angustifolia": ("Lavender", "Herb"),
     "Amaranthus hybridus": ("Amaranth greens", "Vegetable"),
     "Amaranthus tricolor": ("Leaf amaranth", "Vegetable"),
-    "Cleome gynandra": ("Spider plant", "Vegetable"),
-    "Corchorus olitorius": ("Jute mallow", "Vegetable"),
+    # Amaranth is what South African growers call morogo. Each species keeps its
+    # own English name because a shared label would collapse four different
+    # envelopes into one row; "morogo" is wired up as a search alias instead.
+    "Amaranthus cruentus": ("Purple amaranth", "Vegetable"),
+    "Amaranthus dubius": ("Slender amaranth", "Vegetable"),
+    "Amaranthus hypochondriacus": ("Prince's feather", "Vegetable"),
+    "Amaranthus lividus": ("Wild amaranth", "Vegetable"),
+    "Chenopodium album": ("Fat hen", "Vegetable"),
+    "Corchorus capsularis": ("Jute", "Fibre"),
     "Solanum nigrum": ("Black nightshade", "Vegetable"),
     "Portulaca oleracea": ("Purslane", "Vegetable"),
     "Urtica dioica": ("Stinging nettle", "Medicinal"),
@@ -195,25 +212,27 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Daucus carota": ("Carrot", "Vegetable"),
     "Pastinaca sativa": ("Parsnip", "Vegetable"),
     "Raphanus sativus": ("Radish", "Vegetable"),
+    "Raphanus sativus var. radicula": ("Salad radish", "Vegetable"),
     "Allium cepa": ("Onion", "Vegetable"),
     "Allium fistulosum": ("Spring onion", "Vegetable"),
-    "Allium porrum": ("Leek", "Vegetable"),
     "Allium sativum": ("Garlic", "Vegetable"),
     "Allium schoenoprasum": ("Chives", "Herb"),
+    "Allium tuberosum": ("Garlic chives", "Herb"),
+    "Allium chinense": ("Chinese scallion", "Vegetable"),
     "Apium graveolens var. rapaceum": ("Celeriac", "Vegetable"),
     "Arracacia xanthorrhiza": ("Arracacha", "Vegetable"),
     "Pachyrhizus erosus": ("Jicama", "Vegetable"),
-    "Smallanthus sonchifolius": ("Yacon", "Vegetable"),
+    "Polymnia sonchifolia": ("Yacon", "Vegetable"),
     "Zingiber officinale": ("Ginger", "Spice"),
     "Curcuma longa": ("Turmeric", "Spice"),
     "Armoracia rusticana": ("Horseradish", "Spice"),
     # --- fruiting vegetables ---
-    "Solanum lycopersicum": ("Tomato", "Vegetable"),
+    # Tomato is indexed under its older genus in ECOCROP; the Solanum name that
+    # modern taxonomy uses is not in the archive at all.
     "Lycopersicon esculentum": ("Tomato", "Vegetable"),
     "Solanum melongena": ("Brinjal", "Vegetable"),
     "Capsicum annuum": ("Pepper", "Vegetable"),
     "Capsicum frutescens": ("Chilli", "Vegetable"),
-    "Capsicum baccatum": ("Aji", "Vegetable"),
     "Abelmoschus esculentus": ("Okra", "Vegetable"),
     "Abelmoschus manihot": ("Aibika", "Vegetable"),
     "Cucumis sativus": ("Cucumber", "Vegetable"),
@@ -228,8 +247,12 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Momordica charantia": ("Bitter gourd", "Vegetable"),
     "Trichosanthes cucumerina": ("Snake gourd", "Vegetable"),
     "Sechium edule": ("Chayote", "Vegetable"),
-    "Physalis peruviana": ("Gooseberry", "Fruit"),
-    "Solanum betaceum": ("Tree tomato", "Fruit"),
+    # Cape gooseberry is the South African name for this one; plain "gooseberry"
+    # belongs to Ribes uva-crispa, which is a different plant.
+    "Physalis peruviana": ("Cape gooseberry", "Fruit"),
+    # Tamarillo. ECOCROP files it under its old genus; the Solanum betaceum name
+    # is not in the archive, so a curated entry for that spelling lands nowhere.
+    "Cyphomandra betacea": ("Tree tomato", "Fruit"),
     # --- deciduous and vine fruit ---
     "Vitis vinifera": ("Grape", "Fruit"),
     "Malus domestica": ("Apple", "Fruit"),
@@ -239,17 +262,23 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Prunus domestica": ("Plum", "Fruit"),
     "Prunus salicina": ("Japanese plum", "Fruit"),
     "Prunus avium": ("Cherry", "Fruit"),
-    "Prunus dulcis": ("Almond", "Nut"),
     "Cydonia oblonga": ("Quince", "Fruit"),
     "Ficus carica": ("Fig", "Fruit"),
     "Fragaria x ananassa": ("Strawberry", "Fruit"),
     "Fragaria vesca": ("Alpine strawberry", "Fruit"),
-    "Rubus idaeus": ("Raspberry", "Fruit"),
-    "Rubus fruticosus": ("Blackberry", "Fruit"),
+    "Fragaria chiloensis": ("Chilean strawberry", "Fruit"),
+    "Fragaria virginiana": ("Virginia strawberry", "Fruit"),
+    "Rubus occidentalis x idaeus": ("Purple raspberry", "Fruit"),
     "Ribes rubrum": ("Red currant", "Fruit"),
     "Ribes nigrum": ("Black currant", "Fruit"),
+    "Ribes sativum": ("White currant", "Fruit"),
+    "Ribes uva-crispa": ("Gooseberry", "Fruit"),
+    "Ribes hirtellum": ("American gooseberry", "Fruit"),
     "Vaccinium corymbosum": ("Blueberry", "Fruit"),
+    "Vaccinium angustifolium": ("Lowbush blueberry", "Fruit"),
+    "Vaccinium macrocarpon": ("Cranberry", "Fruit"),
     "Vaccinium myrtillus": ("Bilberry", "Fruit"),
+    "Malus sylvestris": ("Crab apple", "Fruit"),
     "Punica granatum": ("Pomegranate", "Fruit"),
     "Diospyros kaki": ("Persimmon", "Fruit"),
     "Morus alba": ("Mulberry", "Fruit"),
@@ -262,19 +291,19 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Citrus aurantium": ("Seville orange", "Fruit"),
     "Citrus aurantifolia": ("Lime", "Fruit"),
     "Citrus latifolia": ("Tahiti lime", "Fruit"),
-    "Citrus Clementina": ("Clementine", "Fruit"),
     # --- subtropical and tropical fruit ---
     "Persea americana": ("Avocado", "Fruit"),
     "Mangifera indica": ("Mango", "Fruit"),
     "Musa acuminata": ("Banana", "Fruit"),
-    "Musa x paradisiaca": ("Plantain", "Fruit"),
+    "Musa acuminata x balbisiana": ("Banana (hybrid)", "Fruit"),
     "Psidium guajava": ("Guava", "Fruit"),
     "Ananas comosus": ("Pineapple", "Fruit"),
     "Passiflora edulis": ("Granadilla", "Fruit"),
     "Passiflora ligularis": ("Sweet granadilla", "Fruit"),
     "Carica papaya": ("Papaya", "Fruit"),
     "Litchi chinensis": ("Litchi", "Fruit"),
-    "Dimocarpus longan": ("Longan", "Fruit"),
+    "Dimocarpus longan var. longan": ("Longan", "Fruit"),
+    "Dimocarpus longan var. malesianus": ("Longan (maleisan)", "Fruit"),
     "Nephelium lappaceum": ("Rambutan", "Fruit"),
     "Annona cherimola": ("Cherimoya", "Fruit"),
     "Annona squamosa": ("Sugar apple", "Fruit"),
@@ -282,21 +311,19 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Artocarpus heterophyllus": ("Jackfruit", "Fruit"),
     "Artocarpus altilis": ("Breadfruit", "Fruit"),
     "Averrhoa carambola": ("Star fruit", "Fruit"),
-    "Syzygium jambos": ("Rose apple", "Fruit"),
-    "Syzygium samarangense": ("Wax apple", "Fruit"),
+    "Eugenia jambos": ("Rose apple", "Fruit"),
     "Tamarindus indica": ("Tamarind", "Fruit"),
     "Phoenix dactylifera": ("Date palm", "Fruit"),
     "Hylocereus undatus": ("Dragon fruit", "Fruit"),
-    "Actinidia deliciosa": ("Kiwifruit", "Fruit"),
+    "Actinidia chinensis": ("Kiwifruit", "Fruit"),
+    "Actinidia arguta": ("Kiwiberry", "Fruit"),
     "Opuntia ficus-indica": ("Prickly pear", "Fruit"),
-    "Sclerocarya birrea": ("Marula", "Fruit"),
     "Dovyalis caffra": ("Kei apple", "Fruit"),
-    "Harpephyllum caffrum": ("Wild plum", "Fruit"),
     "Vangueria infausta": ("Wild medlar", "Fruit"),
-    "Ximenia caffra": ("Sour plum", "Fruit"),
+    "Vangueria madagascariensis": ("Spanish tamarind", "Fruit"),
+    "Ximenia americana": ("Sour plum", "Fruit"),
     "Adansonia digitata": ("Baobab", "Fruit"),
     "Ziziphus mauritiana": ("Jujube", "Fruit"),
-    "Landolphia kirkii": ("Rubber vine", "Fruit"),
     # --- nuts ---
     "Juglans regia": ("Walnut", "Nut"),
     "Corylus avellana": ("Hazelnut", "Nut"),
@@ -304,7 +331,7 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Pistacia vera": ("Pistachio", "Nut"),
     "Anacardium occidentale": ("Cashew", "Nut"),
     "Macadamia integrifolia": ("Macadamia", "Nut"),
-    "Macadamia tetraphylla": ("Macadamia", "Nut"),
+    "Carya illinoensis": ("Pecan", "Nut"),
     "Bertholletia excelsa": ("Brazil nut", "Nut"),
     # --- beverage and spice ---
     "Coffea arabica": ("Coffee", "Beverage"),
@@ -313,7 +340,7 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Theobroma cacao": ("Cocoa", "Beverage"),
     "Humulus lupulus": ("Hops", "Beverage"),
     "Piper nigrum": ("Black pepper", "Spice"),
-    "Syzygium aromaticum": ("Clove", "Spice"),
+    "Eugenia aromatica": ("Clove", "Spice"),
     "Myristica fragrans": ("Nutmeg", "Spice"),
     "Cinnamomum verum": ("Cinnamon", "Spice"),
     "Cinnamomum cassia": ("Cassia", "Spice"),
@@ -323,32 +350,48 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Pimpinella anisum": ("Anise", "Spice"),
     "Carum carvi": ("Caraway", "Spice"),
     "Nigella sativa": ("Black cumin", "Spice"),
-    "Aspalathus linearis": ("Rooibos", "Beverage"),
-    "Cyclopia genistoides": ("Honeybush", "Beverage"),
-    "Pelargonium sidoides": ("Umckaloabo", "Medicinal"),
-    "Sutherlandia frutescens": ("Cancer bush", "Medicinal"),
+    "Cuminum cyminum": ("Cumin", "Spice"),
+    "Trachyspermum ammi": ("Ajwain", "Spice"),
+    "Anthriscus cerefolium": ("Chervil", "Herb"),
+    "Levisticum officinale": ("Lovage", "Herb"),
+    "Melissa officinalis": ("Lemon balm", "Herb"),
+    "Origanum majorana": ("Marjoram", "Herb"),
+    "Satureja hortensis": ("Summer savory", "Herb"),
+    "Thymus serpyllum": ("Wild thyme", "Herb"),
+    "Ocimum tenuiflorum": ("Holy basil", "Herb"),
+    "Perilla frutescens": ("Perilla", "Herb"),
+    "Hyssopus officinalis": ("Hyssop", "Herb"),
+    "Aloysia triphylla": ("Lemon verbena", "Herb"),
+    "Aframomum melegueta": ("Grains of paradise", "Spice"),
+    "Alpinia galanga": ("Greater galangal", "Spice"),
+    "Alpinia officinarum": ("Lesser galangal", "Spice"),
+    "Curcuma zedoaria": ("Zedoary", "Spice"),
     "Artemisia afra": ("African wormwood", "Medicinal"),
     "Moringa oleifera": ("Moringa", "Vegetable"),
     "Aloe ferox": ("Bitter aloe", "Medicinal"),
-    "Aloe vera": ("Aloe", "Medicinal"),
-    "Hoodia gordonii": ("Hoodia", "Medicinal"),
-    "Lippia javanica": ("Lemon bush", "Medicinal"),
+    "Aloe barbadensis": ("Aloe vera", "Medicinal"),
+    "Stevia rebaudiana": ("Stevia", "Herb"),
+    "Matricaria recutita": ("Chamomile", "Herb"),
+    "Echinacea purpurea": ("Coneflower", "Medicinal"),
+    "Taraxacum officinale": ("Dandelion", "Medicinal"),
+    "Silybum marianum": ("Milk thistle", "Medicinal"),
+    "Vernonia amygdalina": ("Bitter leaf", "Vegetable"),
+    "Cynara scolymus": ("Globe artichoke", "Vegetable"),
+    "Cynara cardunculus": ("Cardoon", "Vegetable"),
     # --- fodder and pasture ---
-    "Zea mays var. saccharata": ("Sweet corn", "Vegetable"),
-    "Sorghum sudanense": ("Sudan grass", "Fodder"),
+    "Zea mays ssp. saccharata": ("Sweet corn", "Vegetable"),
+    "Sorghum x drummondii": ("Sudan grass", "Fodder"),
     "Pennisetum purpureum": ("Elephant grass", "Fodder"),
+    "Pennisetum clandestinum": ("Kikuyu grass", "Fodder"),
     "Panicum maximum": ("Guinea grass", "Fodder"),
     "Chloris gayana": ("Rhodes grass", "Fodder"),
-    "Digitaria eriantha": ("Smuts finger grass", "Fodder"),
+    "Digitaria eriantha ssp. eriantha": ("Smuts finger grass", "Fodder"),
     "Eragrostis curvula": ("Weeping lovegrass", "Fodder"),
     "Cenchrus ciliaris": ("Buffel grass", "Fodder"),
     "Lolium perenne": ("Perennial ryegrass", "Fodder"),
     "Dactylis glomerata": ("Cocksfoot", "Fodder"),
     "Festuca arundinacea": ("Tall fescue", "Fodder"),
-    "Avena strigosa": ("Black oats", "Fodder"),
-    "Vicia villosa": ("Hairy vetch", "Fodder"),
-    "Brassica oleracea": ("Kale", "Fodder"),
-    "Opuntia streptacantha": ("Cactus pear", "Fodder"),
+    "Vicia villosa ssp. villosa": ("Hairy vetch", "Fodder"),
     "Atriplex nummularia": ("Old man saltbush", "Fodder"),
     "Leucaena leucocephala": ("Leucaena", "Fodder"),
     "Gliricidia sepium": ("Gliricidia", "Fodder"),
@@ -366,63 +409,38 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Tectona grandis": ("Teak", "Timber"),
     "Swietenia macrophylla": ("Mahogany", "Timber"),
     "Populus deltoides": ("Eastern cottonwood", "Timber"),
-    "Salix babylonica": ("Weeping willow", "Timber"),
     "Azadirachta indica": ("Neem", "Medicinal"),
     "Faidherbia albida": ("Ana tree", "Timber"),
-    "Combretum apiculatum": ("Red bushwillow", "Timber"),
     # --- ornamental, cut flower and nursery ---
-    "Rosa x hybrida": ("Rose", "Ornamental"),
-    "Chrysanthemum indicum": ("Chrysanthemum", "Ornamental"),
-    "Dianthus caryophyllus": ("Carnation", "Ornamental"),
-    "Gladiolus communis": ("Gladiolus", "Ornamental"),
-    "Lilium candidum": ("Lily", "Ornamental"),
-    "Tulipa gesneriana": ("Tulip", "Ornamental"),
-    "Tagetes erecta": ("Marigold", "Ornamental"),
-    "Tagetes patula": ("French marigold", "Ornamental"),
+    # ECOCROP is a crop database, not a nursery catalogue: most cut flowers (roses,
+    # tulips, chrysanthemums, Strelitzia, agapanthus) are simply not in it. Only
+    # the ornamentals the archive actually covers are named here.
     "Calendula officinalis": ("Calendula", "Ornamental"),
-    "Helianthus tuberosus": ("Jerusalem artichoke", "Vegetable"),
-    "Zinnia elegans": ("Zinnia", "Ornamental"),
-    "Petunia x hybrida": ("Petunia", "Ornamental"),
-    "Pelargonium graveolens": ("Rose geranium", "Ornamental"),
-    "Gerbera jamesonii": ("Barberton daisy", "Ornamental"),
-    "Agapanthus africanus": ("Agapanthus", "Ornamental"),
-    "Protea cynaroides": ("King protea", "Ornamental"),
-    "Leucospermum cordifolium": ("Pincushion protea", "Ornamental"),
-    "Strelitzia reginae": ("Crane flower", "Ornamental"),
-    "Clivia miniata": ("Bush lily", "Ornamental"),
-    "Kniphofia uvaria": ("Red hot poker", "Ornamental"),
-    "Iris germanica": ("Bearded iris", "Ornamental"),
-    "Freesia refracta": ("Freesia", "Ornamental"),
-    "Ornithogalum thyrsoides": ("Chincherinchee", "Ornamental"),
-    "Nerine bowdenii": ("Nerine", "Ornamental"),
-    "Hydrangea macrophylla": ("Hydrangea", "Ornamental"),
-    "Buxus sempervirens": ("Boxwood", "Ornamental"),
-    "Lantana camara": ("Lantana", "Ornamental"),
+    "Myrtus communis": ("Myrtle", "Ornamental"),
+    "Melaleuca quinquenervia": ("Paperbark", "Ornamental"),
+    "Acmena smithii": ("Lilly pilly", "Ornamental"),
+    "Sansevieria guineensis": ("Snake plant", "Ornamental"),
+    "Yucca elephantipes": ("Spineless yucca", "Ornamental"),
     "Bougainvillea glabra": ("Bougainvillea", "Ornamental"),
-    "Hibiscus rosa-sinensis": ("Hibiscus", "Ornamental"),
-    "Jasminum officinale": ("Jasmine", "Ornamental"),
-    "Plumeria rubra": ("Frangipani", "Ornamental"),
     "Delonix regia": ("Flamboyant tree", "Ornamental"),
     "Jacaranda mimosifolia": ("Jacaranda", "Ornamental"),
     "Schinus molle": ("Pepper tree", "Ornamental"),
-    "Cupressus sempervirens": ("Italian cypress", "Ornamental"),
-    "Thuja occidentalis": ("Arborvitae", "Ornamental"),
-    "Hedera helix": ("Ivy", "Ornamental"),
-    "Vinca minor": ("Periwinkle", "Ornamental"),
-    "Cyperus alternifolius": ("Umbrella papyrus", "Ornamental"),
-    "Nymphaea nouchali": ("Blue water lily", "Ornamental"),
+    "Helianthus tuberosus": ("Jerusalem artichoke", "Vegetable"),
     # --- industrial and multipurpose ---
     "Jatropha curcas": ("Physic nut", "Industrial"),
     "Parthenium argentatum": ("Guayule", "Industrial"),
     "Simmondsia chinensis": ("Jojoba", "Industrial"),
     "Cymbopogon citratus": ("Lemongrass", "Herb"),
-    "Cymbopogon nardus": ("Citronella grass", "Industrial"),
     "Vetiveria zizanioides": ("Vetiver", "Industrial"),
     "Bambusa vulgaris": ("Bamboo", "Timber"),
-    "Arundo donax": ("Giant reed", "Industrial"),
-    "Miscanthus sinensis": ("Miscanthus", "Industrial"),
     "Nicotiana tabacum": ("Tobacco", "Industrial"),
     "Hevea brasiliensis": ("Rubber tree", "Industrial"),
+    "Agave fourcroydes": ("Henequen", "Fibre"),
+    "Agave cantala": ("Cantala", "Fibre"),
+    "Musa textilis": ("Abaca", "Fibre"),
+    "Ceiba pentandra": ("Kapok", "Fibre"),
+    "Ochroma pyramidale": ("Balsa", "Timber"),
+    "Tilia cordata": ("Small-leaved lime", "Timber"),
 
     # --- archive-name aliases ---
     # ECOCROP indexes several species under an older synonym. These entries exist
@@ -442,13 +460,241 @@ CURATED_NAMES: dict[str, tuple[str, str]] = {
     "Eruca sativa": ("Rocket", "Vegetable"),
     "Brassica rapa var. rapifera": ("Turnip", "Vegetable"),
     "Brassica rapa Pak Choi": ("Pak choi", "Vegetable"),
-    "Musa sapientum": ("Banana", "Fruit"),
     "Musa balbisiana": ("Plantain", "Fruit"),
     "Citrus medica": ("Citron", "Fruit"),
     "Citrus grandis": ("Pomelo", "Fruit"),
     "Hibiscus sabdariffa": ("Roselle", "Beverage"),
+    "Hibiscus sabdariffa var. sabdariffa": ("Roselle (cultivated)", "Beverage"),
     "Sorghum bicolor var. sweet": ("Sweet sorghum", "Fodder"),
-    "Vicia villosa ssp. villosa": ("Hairy vetch", "Fodder"),
+
+    # --- second pass: edibles the first shortlist missed --------------------
+    # The first pass covered what a South African field officer would name off
+    # the top of their head. These are the species that were in the catalogue
+    # but hidden behind a Latin name, which made the whole set look far smaller
+    # than it is. The build reports any curated name that does not land on a row,
+    # which is how the wrong-spelling entries here were found and fixed.
+    "Annona reticulata": ("Custard apple", "Fruit"),
+    "Annona atemoya": ("Atemoya", "Fruit"),
+    "Annona senegalensis": ("Wild custard apple", "Fruit"),
+    "Annona montana": ("Mountain soursop", "Fruit"),
+    "Annona diversifolia": ("Ilama", "Fruit"),
+    "Annona purpurea": ("Soncoya", "Fruit"),
+    "Asimina triloba": ("American pawpaw", "Fruit"),
+    "Cananga odorata": ("Ylang-ylang", "Industrial"),
+    "Spondias cytherea": ("Ambarella", "Fruit"),
+    "Spondias mombin": ("Hog plum", "Fruit"),
+    "Spondias purpurea": ("Red mombin", "Fruit"),
+    "Pistacia lentiscus": ("Mastic tree", "Industrial"),
+    "Diospyros mespiliformis": ("Jackalberry", "Fruit"),
+    "Diospyros virginiana": ("American persimmon", "Fruit"),
+    "Diospyros digyna": ("Black sapote", "Fruit"),
+    "Diospyros malabarica": ("Gaub", "Fruit"),
+    "Dovyalis hebecarpa": ("Ceylon gooseberry", "Fruit"),
+    "Flacourtia indica": ("Governor's plum", "Fruit"),
+    "Pangium edule": ("Keluak", "Spice"),
+    "Garcinia mangostana": ("Mangosteen", "Fruit"),
+    "Garcinia dulcis": ("Mundu", "Fruit"),
+    "Garcinia xanthochymus": ("Yellow mangosteen", "Fruit"),
+    "Mammea americana": ("Mammee apple", "Fruit"),
+    "Laurus nobilis": ("Bay laurel", "Spice"),
+    "Cinnamomum burmannii": ("Indonesian cinnamon", "Spice"),
+    "Cinnamomum loureirii": ("Saigon cinnamon", "Spice"),
+    "Cinnamomum camphora": ("Camphor tree", "Industrial"),
+    "Persea americana ssp. guatemalan": ("Avocado (Guatemalan race)", "Fruit"),
+    "Persea americana ssp. mexican": ("Avocado (Mexican race)", "Fruit"),
+    "Persea americana ssp. west indian": ("Avocado (West Indian race)", "Fruit"),
+    "Artocarpus integer": ("Chempedak", "Fruit"),
+    "Artocarpus lakoocha": ("Monkey jack", "Fruit"),
+    "Morus rubra": ("Red mulberry", "Fruit"),
+    "Ficus sycomorus": ("Sycamore fig", "Fruit"),
+    "Acca sellowiana": ("Feijoa", "Fruit"),
+    "Pimenta dioica": ("Allspice", "Spice"),
+    "Pimenta racemosa": ("Bay rum tree", "Industrial"),
+    "Psidium cattleianum": ("Strawberry guava", "Fruit"),
+    "Eugenia uniflora": ("Surinam cherry", "Fruit"),
+    "Eugenia dombeyi": ("Grumichama", "Fruit"),
+    "Syzygium malaccense": ("Malay apple", "Fruit"),
+    "Syzygium javanicum": ("Java apple", "Fruit"),
+    "Myrciaria cauliflora": ("Jaboticaba", "Fruit"),
+    "Eriobotrya japonica": ("Loquat", "Fruit"),
+    "Prunus amygdalus": ("Almond", "Nut"),
+    "Prunus cerasus": ("Sour cherry", "Fruit"),
+    "Prunus mume": ("Japanese apricot", "Fruit"),
+    "Prunus capuli": ("Capulin cherry", "Fruit"),
+    "Prunus africana": ("African cherry", "Medicinal"),
+    "Pyrus pyrifolia": ("Nashi pear", "Fruit"),
+    "Sorbus domestica": ("Service tree", "Fruit"),
+    "Rubus occidentalis": ("Black raspberry", "Fruit"),
+    "Hagenia abyssinica": ("African redwood", "Medicinal"),
+    "Aegle marmelos": ("Bael", "Fruit"),
+    "Calodendrum capense": ("Cape chestnut", "Ornamental"),
+    "Casimiroa edulis": ("White sapote", "Fruit"),
+    "Citrus aurantium ssp. bergamia": ("Bergamot", "Fruit"),
+    "Citrus deliciosa": ("Mediterranean mandarin", "Fruit"),
+    "Citrus madurensis": ("Calamondin", "Fruit"),
+    "Citrus unshiu": ("Satsuma mandarin", "Fruit"),
+    "Fortunella margarita": ("Kumquat", "Fruit"),
+    "Fortunella japonica": ("Round kumquat", "Fruit"),
+    "Fortunella hindsii": ("Hong Kong kumquat", "Ornamental"),
+    "Clausena lansium": ("Wampee", "Fruit"),
+    "Murraya koenigii": ("Curry leaf", "Herb"),
+    "Ruta graveolens": ("Rue", "Herb"),
+    "Zanthoxylum chalybeum": ("Knobwood", "Spice"),
+    "Blighia sapida": ("Ackee", "Fruit"),
+    "Melicoccus bijugatus": ("Spanish lime", "Fruit"),
+    "Nephelium mutabile": ("Pulasan", "Fruit"),
+    "Paullinia cupana": ("Guarana", "Beverage"),
+    "Capsicum chinense": ("Habanero chilli", "Vegetable"),
+    "Capsicum baccatum var. pendulum": ("Aji amarillo", "Vegetable"),
+    "Capsicum pubescens": ("Rocoto", "Vegetable"),
+    "Physalis philadelphica": ("Tomatillo", "Vegetable"),
+    "Solanum aethiopicum": ("African eggplant", "Vegetable"),
+    "Solanum macrocarpon": ("Gboma eggplant", "Vegetable"),
+    "Solanum muricatum": ("Pepino", "Fruit"),
+    "Solanum quitoense": ("Naranjilla", "Fruit"),
+    "Solanum torvum": ("Turkey berry", "Vegetable"),
+    "Solanum americanum": ("Black nightshade", "Vegetable"),
+    "Solanum incanum": ("Bitter apple", "Medicinal"),
+    "Withania somnifera": ("Ashwagandha", "Medicinal"),
+    "Lycium chinense": ("Goji", "Medicinal"),
+    "Cola acuminata": ("Kola nut", "Beverage"),
+    "Cola nitida": ("Bitter kola", "Beverage"),
+    "Theobroma grandiflorum": ("Cupuacu", "Fruit"),
+    "Theobroma bicolor": ("Mocambo", "Fruit"),
+    "Brachychiton acerifolius": ("Illawarra flame tree", "Ornamental"),
+    "Vitis labrusca": ("Concord grape", "Fruit"),
+    "Vitis rotundifolia": ("Muscadine grape", "Fruit"),
+    "Passiflora edulis var. edulis": ("Purple passion fruit", "Fruit"),
+    "Passiflora edulis var. flavicarpa": ("Yellow passion fruit", "Fruit"),
+    "Passiflora mollissima": ("Banana passion fruit", "Fruit"),
+    "Passiflora quadrangularis": ("Giant granadilla", "Fruit"),
+    "Passiflora laurifolia": ("Water lemon", "Fruit"),
+    "Averrhoa bilimbi": ("Bilimbi", "Fruit"),
+    "Oxalis tuberosa": ("Oca", "Staple"),
+    "Carica pubescens": ("Mountain papaya", "Fruit"),
+    "Benincasa hispida": ("Wax gourd", "Vegetable"),
+    "Citrullus colocynthis": ("Colocynth", "Medicinal"),
+    "Cucumis anguria": ("West Indian gherkin", "Vegetable"),
+    "Cucurbita mixta": ("Green-striped cushaw", "Vegetable"),
+    "Luffa cylindrica": ("Luffa", "Industrial"),
+    "Momordica cochinchinensis": ("Gac", "Fruit"),
+    "Telfairia occidentalis": ("Fluted pumpkin", "Vegetable"),
+    "Telfairia pedata": ("Oyster nut", "Nut"),
+    "Asparagus officinalis": ("Asparagus", "Vegetable"),
+    "Strychnos spinosa": ("Spiny monkey orange", "Fruit"),
+    "Ensete ventricosum": ("Ethiopian banana", "Staple"),
+    "Tylosema esculentum": ("Marama bean", "Legume"),
+    "Abelmoschus moschatus": ("Musk mallow", "Industrial"),
+    "Gossypium arboreum": ("Tree cotton", "Fibre"),
+    "Gossypium herbaceum": ("Levant cotton", "Fibre"),
+    "Hibiscus sabdariffa var. altissima": ("Roselle (fibre type)", "Fibre"),
+    "Urena lobata": ("Caesarweed", "Fibre"),
+
+    # --- third pass: staples, palms and tropical fruit still under Latin -------
+    # Same rule as above: a name is only added when the plant is something a
+    # grower buys, plants or sells. Both Manilkara species are sapodilla, so only
+    # one is named rather than merging two envelopes into a single row.
+    # yams and aroids
+    "Dioscorea bulbifera": ("Air potato", "Staple"),
+    "Dioscorea cayenensis": ("Yellow guinea yam", "Staple"),
+    "Dioscorea dumetorum": ("Bitter yam", "Staple"),
+    "Dioscorea esculenta": ("Lesser yam", "Staple"),
+    "Dioscorea opposita": ("Chinese yam", "Staple"),
+    "Dioscorea trifida": ("Cush-cush yam", "Staple"),
+    "Alocasia macrorrhizos": ("Giant taro", "Staple"),
+    "Xanthosoma brasiliense": ("Tahitian spinach", "Staple"),
+    # palms
+    "Phoenix reclinata": ("Wild date palm", "Fruit"),
+    "Borassus aethiopum": ("African fan palm", "Fruit"),
+    "Borassus flabellifer": ("Palmyra palm", "Fruit"),
+    "Hyphaene thebaica": ("Doum palm", "Fruit"),
+    "Euterpe oleracea": ("Acai", "Fruit"),
+    "Bactris gasipaes": ("Peach palm", "Fruit"),
+    "Salacca zalacca": ("Salak", "Fruit"),
+    "Mauritia flexuosa": ("Buriti palm", "Fruit"),
+    "Areca catechu": ("Betel nut", "Industrial"),
+    "Metroxylon sagu": ("Sago palm", "Staple"),
+    "Nypa fruticans": ("Nipa palm", "Industrial"),
+    "Raphia hookeri": ("Raphia palm", "Fibre"),
+    "Caryota urens": ("Fish-tail palm", "Timber"),
+    "Acrocomia aculeata": ("Macaw palm", "Industrial"),
+    "Attalea funifera": ("Piassava", "Fibre"),
+    "Calamus caesius": ("Rattan", "Timber"),
+    "Elaeis oleifera": ("American oil palm", "Industrial"),
+    "Serenoa repens": ("Saw palmetto", "Medicinal"),
+    "Chamaerops humilis": ("Dwarf fan palm", "Ornamental"),
+    "Livistona australis": ("Australian fan palm", "Ornamental"),
+    # sapotaceae and other tropical fruit
+    "Manilkara zapota": ("Sapodilla", "Fruit"),
+    "Chrysophyllum cainito": ("Star apple", "Fruit"),
+    "Chrysophyllum albidum": ("African star apple", "Fruit"),
+    "Vitellaria paradoxa": ("Shea tree", "Industrial"),
+    "Argania sideroxylon": ("Argan", "Industrial"),
+    "Uapaca kirkiana": ("Wild loquat", "Fruit"),
+    "Antidesma bunius": ("Bignay", "Fruit"),
+    "Baccaurea ramiflora": ("Burmese grape", "Fruit"),
+    "Dacryodes edulis": ("African plum", "Fruit"),
+    "Canarium ovatum": ("Pili nut", "Nut"),
+    "Canarium indicum": ("Ngali nut", "Nut"),
+    "Durio zibethinus": ("Durian", "Fruit"),
+    "Brosimum alicastrum": ("Breadnut", "Nut"),
+    "Muntingia calabura": ("Jamaican cherry", "Fruit"),
+    "Grewia asiatica": ("Phalsa", "Fruit"),
+    "Eugenia uvalha": ("Uvaia", "Fruit"),
+    "Psidium friedrichsthalianum": ("Costa Rican guava", "Fruit"),
+    # leafy greens, coffee and industrial
+    "Cnidoscolus chayamansa": ("Chaya", "Vegetable"),
+    "Sauropus androgynus": ("Katuk", "Vegetable"),
+    "Solanum oleraceum": ("African garden egg", "Vegetable"),
+    "Solanum ferox": ("Hairy eggplant", "Vegetable"),
+    "Boesenbergia rotunda": ("Fingerroot", "Spice"),
+    "Aframomum corrorima": ("Ethiopian cardamom", "Spice"),
+    "Coffea liberica": ("Liberica coffee", "Beverage"),
+    "Coffea excelsa": ("Excelsa coffee", "Beverage"),
+    "Morinda citrifolia": ("Noni", "Medicinal"),
+    "Aleurites moluccana": ("Candlenut", "Industrial"),
+    "Euphorbia tirucalli": ("Rubber hedge", "Industrial"),
+    "Ficus thonningii": ("Common wild fig", "Timber"),
+    "Bridelia micrantha": ("Coast goldleaf", "Timber"),
+    "Carissa macrocarpa": ("Big num-num", "Fruit"),
+    "Carissa edulis": ("Num-num", "Fruit"),
+}
+
+# Category from the genus alone, for species the curated list does not name.
+#
+# This is grouping, not labelling: it never invents a common name, and it only
+# covers genera whose use is unambiguous. 111 Eucalyptus species are not 111
+# errors in the catalogue - they are a forestry genus - and saying so is more
+# honest than filing them all under "Other".
+GENUS_CATEGORIES: dict[str, str] = {
+    **{genus: "Timber" for genus in (
+        "Eucalyptus", "Corymbia", "Angophora", "Melaleuca", "Syncarpia",
+        "Lophostemon", "Tristania", "Pinus", "Araucaria", "Agathis",
+        "Cupressus", "Thuja", "Cedrus", "Picea", "Abies", "Larix",
+        "Pseudotsuga", "Tectona", "Dalbergia", "Shorea", "Dipterocarpus",
+        "Hopea", "Vatica", "Parashorea", "Dryobalanops", "Quercus", "Fagus",
+        "Fraxinus", "Betula", "Alnus", "Populus", "Salix", "Ulmus",
+        "Tilia", "Juglans", "Casuarina",
+    )},
+    # South African fynbos and garden genera. Ornamental is what they are sold
+    # for, which is the question this category answers.
+    **{genus: "Ornamental" for genus in (
+        "Protea", "Leucospermum", "Leucadendron", "Mimetes", "Erica",
+        "Agapanthus", "Kniphofia", "Watsonia", "Crocosmia", "Gladiolus",
+        "Clivia", "Dietes", "Strelitzia", "Zantedeschia", "Tulbaghia",
+        "Agave", "Yucca", "Rosa", "Chrysanthemum", "Dahlia", "Tagetes",
+        "Narcissus", "Tulipa", "Lilium", "Iris", "Anthurium", "Heliconia",
+        "Canna", "Bougainvillea", "Hibiscus", "Impatiens", "Begonia",
+    )},
+    "Aloe": "Medicinal",
+}
+
+# Family-level grouping, used only where the family *is* the answer. Every
+# Leguminosae is a legume; that is a fact about the plant, not a guess about its
+# use. Grasses and palms are left unclassified because "cereal", "forage" and
+# "thatch" are all Gramineae, so the family does not settle the category.
+FAMILY_CATEGORIES: dict[str, str] = {
+    "Leguminosae": "Legume",
 }
 
 DERIVED_PROPERTIES = {
@@ -463,7 +709,7 @@ DERIVED_PROPERTIES = {
 REQUIRED_PROPERTY = "OptimalGrowthTemperature"
 
 FIELDS = [
-    "name", "scientific_name", "category",
+    "name", "scientific_name", "family", "category",
     "min_temp", "max_temp",
     "min_rainfall_mm", "max_rainfall_mm",
     "min_ph", "max_ph",
@@ -484,8 +730,8 @@ def fetch_archive() -> Path:
     return ARCHIVE
 
 
-def read_archive(path: Path) -> tuple[dict[str, str], list[dict[str, str]]]:
-    """Return (taxonID -> scientificName, measurement rows)."""
+def read_archive(path: Path) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
+    """Return (taxonID -> {scientific, family}, measurement rows)."""
     with zipfile.ZipFile(path) as archive:
         taxa_rows = list(csv.DictReader(
             io.TextIOWrapper(archive.open("taxa.txt"), encoding="utf-8", errors="ignore"),
@@ -495,8 +741,32 @@ def read_archive(path: Path) -> tuple[dict[str, str], list[dict[str, str]]]:
             io.TextIOWrapper(archive.open("measurementsorfacts.txt"), encoding="utf-8", errors="ignore"),
             delimiter="\t",
         ))
-    taxa = {row["taxonID"]: row["scientificName"].strip() for row in taxa_rows}
+    taxa = {
+        row["taxonID"]: {
+            "scientific": (row.get("scientificName") or "").strip(),
+            # Botanical family, straight from the archive. It is the one piece of
+            # identity available for the ~1,800 species with no common name, so a
+            # grower browsing the catalogue still sees what kind of plant it is.
+            "family": (row.get("family") or "").strip(),
+        }
+        for row in taxa_rows
+    }
     return taxa, measurements
+
+
+def _fallback_category(scientific: str, family: str) -> str:
+    """Category for a species the curated list does not name.
+
+    Genus first, then family, then Other. Neither step invents a name: they only
+    say what kind of plant it is, which is the question a grower browsing 2,000
+    species is actually asking.
+    """
+    genus = scientific.split()[0] if scientific else ""
+    return (
+        GENUS_CATEGORIES.get(genus)
+        or FAMILY_CATEGORIES.get(family)
+        or UNCATEGORISED
+    )
 
 
 def _clean_number(value: str) -> str:
@@ -545,7 +815,7 @@ def _is_plausible(prop: str, bounds: dict[str, str]) -> bool:
 
 
 def build_rows(
-    taxa: dict[str, str],
+    taxa: dict[str, dict[str, str]],
     measurements: list[dict[str, str]],
     *,
     verbose: bool = False,
@@ -574,7 +844,8 @@ def build_rows(
     dropped: list[str] = []
 
     candidates: list[dict[str, str]] = []
-    for tid, scientific in taxa.items():
+    for tid, taxon in taxa.items():
+        scientific = taxon["scientific"]
         required = envelopes.get((tid, REQUIRED_PROPERTY), {})
         if "min" not in required or "max" not in required:
             continue
@@ -588,7 +859,8 @@ def build_rows(
         record = {
             "name": curated[0] if curated else scientific,
             "scientific_name": scientific,
-            "category": curated[1] if curated else UNCATEGORISED,
+            "family": taxon["family"],
+            "category": curated[1] if curated else _fallback_category(scientific, taxon["family"]),
             "source": SOURCE_NAME,
         }
 
@@ -622,8 +894,10 @@ def build_rows(
     # carries more complete envelope data. Uncurated taxa keep their Latin name
     # and are never dropped.
     by_name: dict[str, dict[str, str]] = {}
+    merged: list[tuple[str, str]] = []
     for record in sorted(candidates, key=lambda r: (-int(r["_completeness"]), r["scientific_name"])):
         if record["name"] in by_name:
+            merged.append((record["scientific_name"], record["name"]))
             continue
         by_name[record["name"]] = record
 
@@ -648,8 +922,18 @@ def build_rows(
     # so a typo or a renamed synonym is visible instead of silently missing. The
     # full list is behind --verbose because most of them are ornamental species
     # ECOCROP simply never covered, which is expected rather than a defect.
+    #
+    # Species that lost a name collision are excluded: they are in the archive,
+    # just merged into the synonym that carried more envelope data.
     present = {row["scientific_name"] for row in rows}
-    missing = sorted(set(CURATED_NAMES) - present)
+    if merged and verbose:
+        for scientific, name in merged:
+            print(
+                f"note: merged {scientific} into the row already labelled '{name}'",
+                file=sys.stderr,
+            )
+    merged_species = {scientific for scientific, _ in merged}
+    missing = sorted(set(CURATED_NAMES) - present - merged_species)
     if missing:
         if verbose:
             print(
