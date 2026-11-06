@@ -29,9 +29,12 @@ create extension if not exists "pgcrypto";
 --
 -- The table covers every taxon the archive has a usable envelope for (~2,070), not
 -- a shortlist. ECOCROP only carries scientific names, so `name` is the common name
--- where one is known and the scientific name otherwise -- compare the two columns
--- to tell which. `name` is therefore deliberately NOT unique: "Tomato" can come
--- from two synonymous taxa.
+-- where one is known (508 species) and the scientific name otherwise (1,558) --
+-- compare the two columns to tell which. `name` is therefore deliberately NOT
+-- unique: "Tomato" can come from two synonymous taxa.
+--
+-- `family` is the botanical family from the archive. It is the only identity an
+-- unnamed species has, and the API searches on it, so it is indexed.
 --
 -- Rainfall and pH are nullable because the archive genuinely lacks them for a
 -- handful of species. They are empty rather than defaulted to a plausible
@@ -44,6 +47,7 @@ create table if not exists crop_reference (
     id              uuid primary key default gen_random_uuid(),
     name            text not null,
     scientific_name text not null unique,
+    family          text,                    -- botanical family, from the archive
     category        text,
     min_temp        numeric(5, 1) not null,  -- degrees C, optimal range
     max_temp        numeric(5, 1) not null,
@@ -60,6 +64,9 @@ create index if not exists crop_reference_name_idx
 
 create index if not exists crop_reference_category_idx
     on crop_reference (category);
+
+create index if not exists crop_reference_family_idx
+    on crop_reference (family);
 
 -- ---------------------------------------------------------------------------
 -- Market prices

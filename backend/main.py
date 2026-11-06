@@ -257,6 +257,14 @@ async def crops(
             "The default shortlist prefers crops a grower will recognise."
         ),
     ),
+    q: str | None = Query(
+        default=None,
+        max_length=60,
+        description=(
+            "Find a species by common name, scientific name or botanical family. "
+            "A search covers the whole catalogue and ignores the score floor."
+        ),
+    ),
 ) -> dict:
     """Crops whose ECOCROP envelope fits this field's measured conditions."""
     categories = (
@@ -268,6 +276,7 @@ async def crops(
         limit=limit,
         categories=categories,
         named_only=not include_all,
+        query=q,
     )
 
 

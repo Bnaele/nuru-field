@@ -95,7 +95,10 @@ as unavailable. It never falls back to stale data presented as current.
 
 The original FAO ECOCROP site is offline, so this Zenodo archive is the citable
 copy. `backend/data/build_crop_data.py` downloads it and derives
-`backend/data/crop_reference.csv`.
+`backend/data/crop_reference.csv`: 2,066 species, every taxon in the archive that
+carries a usable temperature pair. Fruit, vegetables, herbs, spices, nuts,
+grains, legumes, oilseeds, fodder, fibre, timber, medicinal and ornamental plants
+are all in there; what is missing from the names is common names, not species.
 
 What is **derived from ECOCROP** — for each crop, the optimal window for growth
 temperature, annual rainfall and soil pH, taken from the archive's
@@ -108,9 +111,15 @@ temperature, annual rainfall and soil pH, taken from the archive's
 
 What is **authored in this repository, not from ECOCROP**:
 
-- The species → common name mapping (254 of the 2,065 rows; every other row keeps
-  its scientific name).
-- The category label (Grain, Legume, Vegetable, …).
+- The species → common name mapping (508 of the 2,066 rows; every other row keeps
+  its scientific name and shows its botanical family instead).
+- The category label (Grain, Legume, Vegetable, …), including the genus and family
+  groupings in `GENUS_CATEGORIES` and `FAMILY_CATEGORIES`. Those only group species
+  the curated list does not name — 111 *Eucalyptus* species are timber and every
+  *Leguminosae* is a legume — and they never invent a common name.
+- The South African vernacular aliases in `backend/crops.py` (`morogo`, `amadumbe`,
+  `spanspek`, `naartjie`, …). These are search keys pointing at a species the
+  catalogue already holds; they rename nothing.
 - The plausibility bounds in `build_crop_data.py`, and the soil-texture adjustment
   in `backend/crops.py`. ECOCROP carries no texture envelope, so scoring one
   against a fabricated threshold would be dishonest. Texture instead makes a

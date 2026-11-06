@@ -9,10 +9,21 @@ not hand-written guesses. Regenerate with:
 
     python data/build_crop_data.py
 
-Coverage is every taxon the archive can score: about 2,070 species covering fruit,
+Coverage is every taxon the archive can score: 2,066 species covering fruit,
 vegetables, herbs, spices, nuts, grains, legumes, oilseeds, fodder, fibre, timber,
 medicinal and ornamental plants. ECOCROP only carries scientific names, so a crop
-with no curated common name keeps its Latin name rather than being dropped.
+with no curated common name keeps its Latin name rather than being dropped, and
+carries its botanical family instead.
+
+Finding a plant
+---------------
+A grower who already has a plant in mind does not want a shortlist, so `query`
+searches the whole catalogue by common name, scientific name, botanical family or
+South African vernacular name (VERNACULAR_ALIASES), and skips the score floor.
+The score and the cautions still come back, so "mango" in a cold field returns
+the mango and says why it would struggle instead of returning nothing. Local
+names matter here: ECOCROP has never heard of amadumbe, morogo or naartjie, and a
+search that answers those with an empty list looks broken.
 
 What the scorer does
 --------------------
@@ -81,6 +92,50 @@ LIGHT_TEXTURES = {"sand", "loamy sand", "sandy loam"}
 
 UNCATEGORISED = "Other"
 
+# South African vernacular names.
+#
+# ECOCROP carries scientific names, and the curated list adds the English name a
+# seed packet would use. Neither includes what a grower here actually types, so
+# "amadumbe" or "spanspek" returned nothing even though the plant was in the
+# catalogue all along. An alias maps a local word onto the species it names; it is
+# a search key only and never renames a row.
+VERNACULAR_ALIASES: dict[str, tuple[str, ...]] = {
+    "amadumbe": ("Colocasia esculenta",),
+    "madumbe": ("Colocasia esculenta",),
+    "naartjie": ("Citrus reticulata",),
+    "nartjie": ("Citrus reticulata",),
+    "spanspek": ("Cucumis melo",),
+    "mielie": ("Zea mays",),
+    "mealie": ("Zea mays",),
+    "morogo": (
+        "Amaranthus cruentus", "Amaranthus dubius", "Amaranthus hypochondriacus",
+        "Amaranthus lividus", "Amaranthus hybridus", "Amaranthus tricolor",
+        "Chenopodium album", "Solanum nigrum",
+    ),
+    "imifino": (
+        "Amaranthus cruentus", "Amaranthus dubius", "Amaranthus hypochondriacus",
+        "Amaranthus lividus", "Amaranthus hybridus", "Amaranthus tricolor",
+        "Chenopodium album", "Solanum nigrum",
+    ),
+    "gem squash": ("Cucurbita pepo",),
+    "patty pan": ("Cucurbita pepo",),
+    "pawpaw": ("Carica papaya",),
+    "kikuyu": ("Pennisetum clandestinum",),
+    "napier": ("Pennisetum purpureum",),
+    "num-num": ("Carissa macrocarpa", "Carissa edulis"),
+    "num num": ("Carissa macrocarpa", "Carissa edulis"),
+    "waterberry": ("Syzygium cordatum",),
+    "kei apple": ("Dovyalis caffra",),
+    "umdoni": ("Syzygium cordatum",),
+}
+
+
+@lru_cache(maxsize=1)
+def _alias_index() -> dict[str, frozenset[str]]:
+    """Alias word -> the species it names, lowercased once."""
+    return {word: frozenset(species) for word, species in VERNACULAR_ALIASES.items()}
+
+
 # Ordering bonus for crops with a known common name. Displayed scores are never
 # adjusted; this only decides who appears first when two crops score alike, so a
 # grower sees "Cabbage" before an unnamed forestry species with the same fit.
@@ -133,6 +188,7 @@ def load_reference() -> tuple[dict, ...]:
                 {
                     "name": name,
                     "scientific_name": scientific,
+                    "family": (row.get("family") or "").strip(),
                     "category": (row.get("category") or UNCATEGORISED).strip(),
                     "temperature": temperature,
                     "rainfall": _range(row, "min_rainfall_mm", "max_rainfall_mm"),
@@ -276,6 +332,7 @@ def evaluate_crop(crop: dict, context: dict) -> dict:
     return {
         "name": crop["name"],
         "scientific_name": crop["scientific_name"],
+        "family": crop["family"],
         "category": crop["category"],
         "has_common_name": crop["has_common_name"],
         "score": score,
@@ -305,16 +362,29 @@ def rank_crops(
     minimum_score: int = 40,
     categories: set[str] | None = None,
     named_only: bool = True,
+    query: str | None = None,
 ) -> tuple[list[dict], int]:
     """Best-fitting crops for a context, strongest first.
 
     Returns (crops, number_of_candidates_considered).
 
-    `named_only` keeps the default list actionable: about 1,800 of the 2,070
-    species have no curated common name and are listed under their scientific
-    name, which is fine for a browse-everything view and useless as a shortlist.
-    Pass False to search the whole catalogue.
+    `named_only` keeps the default list actionable: 1,558 of the 2,066 species
+    have no curated common name and are listed under their scientific name, which
+    is fine for a browse-everything view and useless as a shortlist. Pass False to
+    search the whole catalogue.
+
+    `query` is a name search rather than a recommendation. The grower already has
+    a plant in mind, so it searches every species by common name, scientific name
+    or family, and it does not hide the result behind the minimum score: a mango
+    in a cold field is still the plant they asked about, and the score plus the
+    cautions say why it would struggle.
     """
+    needle = (query or "").strip().lower()
+    if needle:
+        named_only = False
+        minimum_score = 0
+    aliased = _alias_index().get(needle, frozenset())
+
     considered = 0
     scored: list[dict] = []
     for crop in load_reference():
@@ -322,13 +392,21 @@ def rank_crops(
             continue
         if named_only and not crop["has_common_name"]:
             continue
+        if needle and not (
+            needle in crop["name"].lower()
+            or needle in crop["scientific_name"].lower()
+            or needle in crop["family"].lower()
+            or crop["scientific_name"] in aliased
+        ):
+            continue
         considered += 1
         result = evaluate_crop(crop, context)
         if result["score"] >= minimum_score:
             scored.append(result)
 
     # The known-name bonus only applies to the shortlist view. When browsing the
-    # whole catalogue the ordering is pure score, so nothing is silently promoted.
+    # whole catalogue or searching, the ordering is pure score, so nothing is
+    # silently promoted.
     bonus = NAMED_ORDER_BONUS if named_only else 0
     scored.sort(
         key=lambda crop: (
@@ -351,6 +429,19 @@ def _context_from(climate: dict, soil: dict, month_name: str, season: str) -> di
     }
 
 
+@lru_cache(maxsize=1)
+def category_counts() -> dict[str, int]:
+    """How many species sit in each category, for the filter chips.
+
+    Counted from the same reference the scorer uses, so the chips can never
+    promise a category that returns nothing.
+    """
+    counts: dict[str, int] = {}
+    for crop in load_reference():
+        counts[crop["category"]] = counts.get(crop["category"], 0) + 1
+    return dict(sorted(counts.items(), key=lambda pair: (-pair[1], pair[0])))
+
+
 async def recommend_for(
     latitude: float,
     longitude: float,
@@ -358,6 +449,7 @@ async def recommend_for(
     limit: int = 8,
     categories: set[str] | None = None,
     named_only: bool = True,
+    query: str | None = None,
 ) -> dict:
     """Crops for a coordinate, using its own weather and soil.
 
@@ -373,7 +465,11 @@ async def recommend_for(
     context = _context_from(weather["climate"], soil, month_name, current_season())
 
     crops, considered = rank_crops(
-        context, limit=limit, categories=categories, named_only=named_only
+        context,
+        limit=limit,
+        categories=categories,
+        named_only=named_only,
+        query=query,
     )
     catalogue_size = len(load_reference())
     missing = [
@@ -401,6 +497,8 @@ async def recommend_for(
             "species_scored": considered,
             "species_available": catalogue_size,
             "named_only": named_only,
+            "search": query,
+            "categories": category_counts(),
         },
         "source": {
             "name": "FAO ECOCROP",

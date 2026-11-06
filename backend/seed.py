@@ -55,6 +55,7 @@ CONFLICT_COLUMN = "scientific_name"
 COLUMNS = [
     "name",
     "scientific_name",
+    "family",
     "category",
     "min_temp",
     "max_temp",
@@ -67,8 +68,10 @@ COLUMNS = [
 
 # Empty cells mean "the archive has no value", not zero. They must become NULL,
 # because a 0 mm rainfall envelope would score every dryland crop as a perfect
-# match.
+# match. `family` is here for the same reason: 181 taxa have no family recorded
+# upstream, and an empty string would make them unsearchable but look present.
 NULLABLE = {
+    "family",
     "category",
     "min_rainfall_mm",
     "max_rainfall_mm",
