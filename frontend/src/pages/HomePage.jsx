@@ -2,7 +2,6 @@
 // Anyone (authed or not) can see this. The hero explains the product
 // and its CTAs push the user toward /field (which requires auth).
 
-import { Link } from 'react-router-dom'
 import Hero from '../components/Hero'
 import Footer from '../components/Footer'
 

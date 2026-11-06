@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import Icon from './Icon';
 
 export default function Footer() {
@@ -10,15 +11,17 @@ export default function Footer() {
             <h2>Better information. Stronger harvests.</h2>
             <p>Start with your field, then make the next good decision.</p>
           </div>
-          <a className="button button-primary" href="#field">Build my field profile <Icon name="arrow" size={18} /></a>
+          {/* Was href="#field". The dashboard lives on /field, not on an anchor of
+              the landing page, so the call to action did nothing at all. */}
+          <Link className="button button-primary" to="/field">Build my field profile <Icon name="arrow" size={18} /></Link>
         </div>
       </section>
       <footer>
         <div className="container footer-inner">
-          <a className="brand footer-brand" href="#home">
+          <Link className="brand footer-brand" to="/" aria-label="Nuru Field home">
             <span className="brand-mark"><Icon name="leaf" size={20} /></span>
             <span>NURU<span className="brand-sub">FIELD</span></span>
-          </a>
+          </Link>
           <p>Made for thoughtful, resilient farming.</p>
           <p className="footer-disclaimer">Guidance is informational. Verify crop, chemical and irrigation decisions with local agricultural professionals.</p>
         </div>

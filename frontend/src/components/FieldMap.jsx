@@ -122,6 +122,10 @@ export default function FieldMap({ onPick }) {
 
     const trimmed = query.trim()
     if (trimmed.length < 3) {
+      // Abort as well as clear. Deleting the box back to one character used to
+      // leave the previous request in flight, and when it landed it repopulated
+      // the dropdown with suggestions for a search the grower had already erased.
+      abortRef.current?.abort()
       setSuggestions([])
       setShowSuggestions(false)
       return undefined

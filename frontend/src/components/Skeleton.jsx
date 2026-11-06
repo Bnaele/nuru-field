@@ -1,4 +1,5 @@
-import React from 'react';
+// Loading placeholders. No React import: the JSX runtime is automatic, so
+// importing it only produced an unused-binding lint warning.
 
 export const Skeleton = ({ className = '' }) => (
   <div className={`skeleton ${className}`} />

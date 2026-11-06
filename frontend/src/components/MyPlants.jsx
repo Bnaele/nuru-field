@@ -10,7 +10,7 @@
 
 import { useState } from 'react'
 import Icon from './Icon'
-import { stageFromDate } from '../hooks/usePlants'
+import { localDateString, stageFromDate } from '../hooks/usePlants'
 
 const SUGGESTIONS = [
   'Maize', 'Wheat', 'Sorghum', 'Sunflower', 'Spinach', 'Cabbage', 'Carrot',
@@ -19,7 +19,10 @@ const SUGGESTIONS = [
   'Peach', 'Chilli', 'Herb', 'Fodder',
 ]
 
-const today = () => new Date().toISOString().split('T')[0]
+// Local date, not the UTC one: see localDateString. Both the default value and
+// the picker's `max` read from here, so they always agree with the grower's own
+// calendar.
+const today = () => localDateString()
 
 export default function MyPlants({ plants: store }) {
   const { plants, loading, error, addPlant, removePlant } = store

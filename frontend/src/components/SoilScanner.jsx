@@ -22,12 +22,15 @@ export default function SoilScanner({
           </div>
         </div>
         <div className="scanner card">
+          {/* Only the three formats the backend can send to the model. This was
+              image/*, which let an iPhone HEIC through to a confusing rejection
+              after the grower had already taken the photo. */}
           <input
             ref={fileInputRef}
             id="soil-image"
             className="file-input"
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             capture="environment"
             onChange={(e) => onSelectFile(e.target.files?.[0])}
           />

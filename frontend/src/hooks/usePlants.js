@@ -74,6 +74,34 @@ export function usePlants() {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+/**
+ * Today as YYYY-MM-DD in the grower's own timezone.
+ *
+ * `new Date().toISOString().slice(0, 10)` is the UTC date. South Africa runs on
+ * UTC+2, so between midnight and 02:00 it returns yesterday: the "planted" field
+ * defaulted to the wrong day and its `max` refused the current one.
+ */
+export function localDateString(when = new Date()) {
+  const shifted = new Date(when.getTime() - when.getTimezoneOffset() * 60 * 1000)
+  return shifted.toISOString().slice(0, 10)
+}
+
+/**
+ * Milliseconds for a stored date, read as local midnight when it has no time.
+ *
+ * `new Date('2026-11-06')` is UTC midnight, which is 02:00 on the same day in
+ * South Africa. Counting "days since planting" from 02:00 makes a plant added
+ * in the evening look a day older than it is for the first two hours of the
+ * night.
+ */
+function parseWhen(value) {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (dateOnly) {
+    return new Date(+dateOnly[1], +dateOnly[2] - 1, +dateOnly[3]).getTime()
+  }
+  return new Date(value).getTime()
+}
+
 /** A plant is due when it has never been watered or the last watering is old. */
 export function isDue(plant, intervalDays) {
   if (!plant.last_watered_at) return true
@@ -85,7 +113,7 @@ export function isDue(plant, intervalDays) {
 /** "3 weeks" style age from the planting date, used for the plant list. */
 export function stageFromDate(plantingDate) {
   if (!plantingDate) return 'no planting date'
-  const planted = new Date(plantingDate).getTime()
+  const planted = parseWhen(plantingDate)
   if (Number.isNaN(planted)) return 'no planting date'
 
   const days = Math.floor((Date.now() - planted) / DAY_MS)
