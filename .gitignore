@@ -1,5 +1,6 @@
 node_modules/
 venv/
+.venv/
 __pycache__/
 .env
 frontend/.env
@@ -11,3 +12,8 @@ frontend/node_modules/
 frontend/dist/
 __pycache__/
 *.pyc
+
+# Local scratch space and downloaded reference archives
+.scratch/
+.pytest_cache/
+backend/data/.ecocrop/
