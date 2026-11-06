@@ -1,688 +1,468 @@
-"""Nuru Field API: weather context plus a server-side Gemini proxy and Supabase backend.
+"""Nuru Field API.
 
-Keep GEMINI_API_KEY, WEATHERAPI_KEY, SUPABASE_URL, and SUPABASE_SERVICE_KEY in
-backend/.env or the host's environment. They are intentionally never exposed
-to the React application or committed to source control.
+A thin router. Everything of substance lives in a module behind it:
+
+    config.py            settings, source endpoints, cache lifetimes
+    db.py                Supabase client and token verification
+    ai.py                Gemini access and the prompts allowed to call it
+    ratelimit.py         per-user caps on the endpoints that cost money
+    crops.py             ECOCROP matching against measured climate and soil
+    geo.py               region lookup with an offline fallback
+    cache.py             coordinate-keyed TTL cache with stampede protection
+    sources/             one module per upstream data provider
+
+Design rules this file follows, all of them reactions to the hackathon build:
+
+* Every response that carries measured data also carries a `source` block, so the
+  UI can never present a figure without saying where it came from and when.
+* A failure in one source degrades that section, not the whole page. Soil over a
+  built-up area returns `available: false` instead of breaking the field profile.
+* Nothing is invented to fill a gap. Missing means missing.
 """
+
+from __future__ import annotations
 
 import asyncio
 import base64
-import os
 from datetime import date
-from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-import httpx
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from supabase import create_client, Client
 
+import ai
+import db
+from config import CORS_ORIGINS, current_season
+from crops import recommend_for
+from geo import resolve_region
+from ratelimit import chat_limiter, photo_analysis_limiter
+from sources.http import UpstreamError
+from sources.joburg_market import get_market_prices
+from sources.open_meteo import get_field_climate
+from sources.soilgrids import get_soil_profile
 
-def load_local_env() -> None:
-    """Tiny .env reader so the hackathon project has no extra runtime dependency."""
-    env_file = Path(__file__).with_name('.env')
-    if not env_file.exists():
-        return
-    for raw_line in env_file.read_text(encoding='utf-8').splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith('#') or '=' not in line:
-            continue
-        key, value = line.split('=', 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
-load_local_env()
-
-app = FastAPI(title='Nuru Field API', version='1.0.0')
-origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173').split(',')
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[origin.strip() for origin in origins],
-    allow_credentials=False,
-    allow_methods=['POST', 'GET'],
-    allow_headers=['Content-Type', 'Authorization'],
+app = FastAPI(
+    title="Nuru Field API",
+    version="2.0.0",
+    description=(
+        "Field intelligence for growers: live weather, modelled soil, climate "
+        "normals, crop matching and South African produce prices."
+    ),
 )
 
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
-
-WEATHERAPI_KEY = os.getenv('WEATHERAPI_KEY', '')
-WEATHERAPI_BASE = 'https://api.weatherapi.com/v1'
-
-# --- Supabase Initialization (Lazy/Graceful) --------------------------------
-_supabase_client: Client | None = None
-
-
-def get_supabase() -> Client:
-    global _supabase_client
-    if _supabase_client is None:
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_service_key = os.getenv("SUPABASE_SERVICE_KEY")
-        if not supabase_url or not supabase_service_key:
-            raise HTTPException(
-                status_code=503,
-                detail="Database is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_KEY to backend/.env."
-            )
-        _supabase_client = create_client(supabase_url, supabase_service_key)
-    return _supabase_client
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
 
 
-async def get_current_user(authorization: str = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-
-    token = authorization.removeprefix("Bearer ").strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-
-    try:
-        supabase = get_supabase()
-        user_response = supabase.auth.get_user(token)
-        if not user_response or not user_response.user:
-            raise HTTPException(status_code=401, detail="Invalid session or expired token")
-        return user_response.user
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+@app.exception_handler(UpstreamError)
+async def upstream_error_handler(_request, error: UpstreamError) -> JSONResponse:
+    """A provider failed. Say so plainly and keep the status meaningful."""
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"detail": error.message, "source_failed": True},
+    )
 
 
-# --- Province lookup --------------------------------------------------------
-_PROVINCE_BOXES = [
-    ('Western Cape',   -35.0, -30.0, 17.5, 24.5),
-    ('Northern Cape',  -31.5, -25.5, 17.5, 25.5),
-    ('Eastern Cape',   -34.5, -30.0, 24.5, 30.0),
-    ('KwaZulu-Natal',  -31.5, -26.5, 28.5, 33.5),
-    ('Free State',     -30.8, -26.5, 24.5, 28.5),
-    ('North West',     -27.5, -24.5, 22.5, 27.5),
-    ('Gauteng',        -26.9, -25.3, 27.3, 29.0),
-    ('Mpumalanga',     -27.0, -24.5, 28.5, 32.0),
-    ('Limpopo',        -25.5, -22.0, 26.0, 32.0),
-]
+# --- Request models ---------------------------------------------------------
+
+MAX_IMAGE_BYTES = 4_500_000  # ~4.5 MB decoded, well under every provider cap
 
 
-def province_from_coords(lat: float, lon: float) -> str | None:
-    """Return the SA province containing (lat, lon), or None if outside SA."""
-    for name, min_lat, max_lat, min_lon, max_lon in _PROVINCE_BOXES:
-        if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
-            return name
-    return None
-
-
-FARMER_SYSTEM_PROMPT = """You are Nuru, a thoughtful agricultural field adviser for smallholder and first-time farmers, with a focus on South Africa while remaining useful globally.
-Give practical, concise, plain-language advice. Explain uncertainty. You are not a substitute for a local agronomist, soil laboratory, veterinarian, or pesticide label. Never invent local records, disease diagnoses, exact chemical rates, soil nutrient values, or legal requirements. For potentially serious plant disease, pesticide, fertiliser, livestock, food-safety, or weather-risk questions, clearly say when to consult a local extension officer, certified agronomist, or other appropriate professional. Use metric units. Keep answers to a short helpful paragraph followed by 3–5 next steps when useful."""
-
-
-class Coordinates(BaseModel):
-    latitude: float = Field(ge=-90, le=90)
-    longitude: float = Field(ge=-180, le=180)
-
-
-class SoilRequest(BaseModel):
+class PhotoRequest(BaseModel):
     image: str = Field(min_length=100, max_length=7_000_000)
-    mimeType: Literal['image/jpeg', 'image/png', 'image/webp'] = 'image/jpeg'
-    location: str = Field(default='not provided', max_length=120)
-    weatherContext: str = Field(default='', max_length=2000)
-
-
-class PlantRequest(BaseModel):
-    image: str = Field(min_length=100, max_length=7_000_000)
-    mimeType: Literal['image/jpeg', 'image/png', 'image/webp'] = 'image/jpeg'
-    location: str = Field(default='not provided', max_length=120)
-    weatherContext: str = Field(default='', max_length=2000)
-    plant_id: UUID | None = None
+    mimeType: Literal["image/jpeg", "image/png", "image/webp"] = "image/jpeg"
+    location: str = Field(default="not provided", max_length=120)
+    weatherContext: str = Field(default="", max_length=2000)
 
 
 class ChatMessage(BaseModel):
-    role: Literal['user', 'assistant']
+    role: Literal["user", "assistant"]
     text: str = Field(min_length=1, max_length=2500)
 
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2500)
     history: list[ChatMessage] = Field(default_factory=list, max_length=6)
-    fieldContext: str = Field(default='', max_length=2500)
+    fieldContext: str = Field(default="", max_length=2500)
 
 
-class FieldProfileSaveRequest(BaseModel):
-    label: str
-    latitude: float
-    longitude: float
-    summary: str = ""
-    notes: str = ""
+class PlantCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    crop_type: str | None = Field(default=None, max_length=80)
+    planting_date: date | None = None
 
 
-def mean(values: list[float | int | None]) -> float:
-    usable = [float(value) for value in values if value is not None]
-    return round(sum(usable) / len(usable), 1) if usable else 0.0
+# Annotated so each parameter gets its own Query instance. Sharing one Query object
+# as the default of several parameters makes FastAPI bind them all to the first
+# definition, which fails validation in confusing ways.
+Lat = Annotated[float, Query(alias="lat", ge=-90, le=90, description="Latitude, decimal degrees")]
+Lon = Annotated[float, Query(alias="lon", ge=-180, le=180, description="Longitude, decimal degrees")]
 
 
-# --- Weather fetch via WeatherAPI.com ---------------------------------------
+# --- Public data endpoints --------------------------------------------------
 
-async def fetch_weather(latitude: float, longitude: float) -> dict:
-    """Return a live snapshot and a same-month, 10-year seasonal weather signal."""
-    if not WEATHERAPI_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail='Weather is not configured. Add WEATHERAPI_KEY to backend/.env.',
-        )
-
-    today = date.today()
-    start_year = today.year - 10
-    end_year = today.year - 1
-    query = f'{latitude},{longitude}'
-
-    history_dates = [
-        f'{year}-{today.month:02d}-15'
-        for year in range(start_year, end_year + 1)
-    ]
-
-    try:
-        async with httpx.AsyncClient(timeout=18.0) as client:
-            forecast_response = await client.get(
-                f'{WEATHERAPI_BASE}/forecast.json',
-                params={'key': WEATHERAPI_KEY, 'q': query, 'days': 2, 'aqi': 'no'},
-            )
-            forecast_response.raise_for_status()
-
-            history_responses = await asyncio.gather(*[
-                client.get(
-                    f'{WEATHERAPI_BASE}/history.json',
-                    params={'key': WEATHERAPI_KEY, 'q': query, 'dt': d},
-                )
-                for d in history_dates
-            ], return_exceptions=True)
-    except httpx.HTTPError as error:
-        import traceback
-        print(f'[fetch_weather] httpx error: {type(error).__name__}: {error}', flush=True)
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=502,
-            detail='Weather data is temporarily unavailable. Please try again shortly.',
-        ) from error
-
-    forecast = forecast_response.json()
-    current = forecast.get('current', {})
-    forecast_days = forecast.get('forecast', {}).get('forecastday', [])
-    location_info = forecast.get('location', {})
-
-    temperature = current.get('temp_c')
-    wind_kph = current.get('wind_kph')
-    condition = current.get('condition', {}).get('text', 'Local conditions')
-
-    chance_of_rain = 0
-    if forecast_days:
-        chance_of_rain = forecast_days[0].get('day', {}).get('daily_chance_of_rain', 0) or 0
-
-    next_rain = 0.0
-    if len(forecast_days) > 1:
-        next_rain = forecast_days[1].get('day', {}).get('totalprecip_mm', 0.0) or 0.0
-
-    historic_temps = []
-    historic_rain = []
-    for resp in history_responses:
-        if isinstance(resp, Exception):
-            continue
-        try:
-            day = resp.json()['forecast']['forecastday'][0]['day']
-            historic_temps.append(day.get('avgtemp_c'))
-            historic_rain.append(day.get('totalprecip_mm') or 0.0)
-        except (KeyError, IndexError, ValueError):
-            continue
-
-    history_temp = round(mean(historic_temps), 1) if historic_temps else 0.0
-    history_rain = round(sum(historic_rain) / len(historic_rain), 1) if historic_rain else 0.0
-    month_name = today.strftime('%B')
-
-    province = province_from_coords(latitude, longitude)
-
-    summary = (
-        f'Approximate field coordinates: {latitude:.3f}, {longitude:.3f}'
-        + (f' ({province})' if province else '')
-        + f'. Live conditions: {condition.lower()}, {temperature}°C, '
-        f'wind {wind_kph} km/h. '
-        f'{month_name} seasonal signal ({start_year}–{end_year}): '
-        f'average temperature {history_temp}°C and average rainfall {history_rain} mm.'
-    )
-
-    return {
-        'location': {
-            'label': location_info.get('name') or f'Your field · {latitude:.3f}, {longitude:.3f}',
-            'latitude': latitude,
-            'longitude': longitude,
-            'province': province,
-        },
-        'weather': {
-            'temperature': round(temperature) if temperature is not None else '--',
-            'condition': condition,
-            'wind': f'{round(wind_kph)} km/h' if wind_kph is not None else '--',
-            'rainChance': f'{round(chance_of_rain)}%',
-            'soilMoisture': '--',
-            'nextRain': f'{next_rain:.1f} mm forecast tomorrow.' if next_rain else 'No meaningful rain forecast tomorrow.',
-        },
-        'history': {
-            'period': f'{month_name} · {start_year}–{end_year}',
-            'rainfall': history_rain,
-            'note': f'Average {month_name.lower()} rainfall and temperature from modelled historical weather. This is not a flood or drought record.',
-        },
-        'summary': summary,
-    }
-
-
-# --- Gemini client (lazy singleton) ------------------------------------------
-
-_genai_client = None
-
-
-def get_genai_client():
-    global _genai_client
-    if _genai_client is None:
-        from google import genai
-        api_key = os.getenv('GEMINI_API_KEY')
-        if not api_key:
-            raise HTTPException(
-                status_code=503,
-                detail='AI is not configured yet. Add GEMINI_API_KEY to backend/.env, then restart the API.',
-            )
-        _genai_client = genai.Client(api_key=api_key)
-    return _genai_client
-
-
-async def gemini_answer(
-    contents: list[dict],
-    *,
-    temperature: float = 0.35,
-    max_output_tokens: int = 650,
-) -> str:
-    from google.genai import types
-
-    client = get_genai_client()
-
-    sdk_contents = []
-    for item in contents:
-        sdk_parts = []
-        for part in item.get('parts', []):
-            if 'text' in part:
-                sdk_parts.append(types.Part.from_text(text=part['text']))
-            elif 'inlineData' in part:
-                inline = part['inlineData']
-                sdk_parts.append(types.Part.from_bytes(
-                    data=base64.b64decode(inline['data']),
-                    mime_type=inline['mimeType'],
-                ))
-        sdk_contents.append(types.Content(role=item.get('role', 'user'), parts=sdk_parts))
-
-    # Fallback chain. Google retired the 2.5 models for new projects, and
-    # the "lite" variants have tiny free-tier quotas, so we stick to 3.x flash.
-    models_to_try = [
-        GEMINI_MODEL,
-        'gemini-3.6-flash',
-    ]
-
-    max_attempts = 4
-    last_error = None
-
-    for model_name in models_to_try:
-        for attempt in range(max_attempts):
-            try:
-                response = await asyncio.to_thread(
-                    client.models.generate_content,
-                    model=model_name,
-                    contents=sdk_contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=FARMER_SYSTEM_PROMPT,
-                        temperature=temperature,
-                        max_output_tokens=max_output_tokens,
-                    ),
-                )
-                text = (response.text or '').strip()
-                if text:
-                    return text
-                last_error = 'empty response'
-                break
-            except Exception as error:
-                last_error = str(error)
-                if '503' in str(error) or '429' in str(error):
-                    delay = 2 ** attempt
-                    await asyncio.sleep(delay)
-                    continue
-                break
-
-    if last_error and '429' in last_error:
-        raise HTTPException(
-            status_code=503,
-            detail='The AI has reached its free-tier limit for today. Please try again tomorrow.',
-        )
-    if last_error and '503' in last_error:
-        raise HTTPException(
-            status_code=503,
-            detail='The AI is temporarily overloaded. Please try again in a moment.',
-        )
-    raise HTTPException(
-        status_code=502,
-        detail='The AI service could not complete the request. Please try again.',
-    )
-
-
-# --- GENERAL ENDPOINTS ---
-
-@app.get('/api/health')
+@app.get("/api/health")
 async def health() -> dict:
+    """What is configured, so a deploy problem is diagnosable from a browser."""
     return {
-        'status': 'ok',
-        'aiConfigured': bool(os.getenv('GEMINI_API_KEY')),
-        'dbConfigured': bool(os.getenv('SUPABASE_URL') and os.getenv('SUPABASE_SERVICE_KEY'))
+        "status": "ok",
+        "version": app.version,
+        "ai_configured": ai.is_configured(),
+        "database_configured": db.is_configured(),
+        "sources": {
+            "weather": "Open-Meteo (keyless)",
+            "soil": "ISRIC SoilGrids (keyless)",
+            "geocoding": "OpenStreetMap Nominatim (keyless)",
+            "prices": "Joburg Market daily sheet",
+            "crops": "FAO ECOCROP",
+        },
     }
 
 
-@app.post('/api/field-profile')
-async def field_profile(coordinates: Coordinates) -> dict:
-    return await fetch_weather(coordinates.latitude, coordinates.longitude)
+def _summarise(region: dict, weather: dict, climate: dict, soil: dict) -> str:
+    """One readable paragraph. Every figure in it is a measured value."""
+    place = region.get("locality") or region.get("region") or "your field"
+    parts = [f"{place}."]
 
+    current = weather.get("current") or {}
+    if current.get("temperature_c") is not None:
+        parts.append(
+            f"Right now {str(current.get('condition', 'conditions unavailable')).lower()}, "
+            f"{current['temperature_c']:.0f} °C"
+            + (f", wind {current['wind_kmh']:.0f} km/h." if current.get("wind_kmh") is not None else ".")
+        )
+
+    month = date.today().strftime("%B")
+    mean_temp = climate.get("same_month_mean_temp_c")
+    month_rain = climate.get("same_month_rainfall_mm")
+    annual = climate.get("annual_rainfall_mm")
+    if mean_temp is not None and month_rain is not None and annual is not None:
+        parts.append(
+            f"{month} over the last {climate.get('years_used', 10)} years averaged "
+            f"{mean_temp:g} °C with {month_rain:g} mm of rain, against {annual:g} mm a year."
+        )
+    elif annual is not None:
+        parts.append(f"Mean annual rainfall is about {annual:g} mm.")
+
+    if soil.get("available"):
+        detail = ", ".join(
+            item for item in (
+                soil.get("texture_class"),
+                f"pH {soil['ph']:g}" if soil.get("ph") is not None else None,
+                f"{soil['clay_pct']:g}% clay" if soil.get("clay_pct") is not None else None,
+            ) if item
+        )
+        parts.append(f"Modelled topsoil: {detail}.")
+    else:
+        parts.append("Soil data is not available for this exact point.")
+
+    return " ".join(parts)
+
+
+@app.get("/api/field-profile")
+async def field_profile(latitude: Lat, longitude: Lon) -> dict:
+    """Everything the dashboard needs for one coordinate, from three sources.
+
+    Region, weather and soil are fetched concurrently and cached by coordinate,
+    so re-selecting the same field is free and switching fields costs three
+    requests rather than the ~22 the old implementation made.
+    """
+    (weather, weather_cached), (soil, soil_cached), region = await asyncio.gather(
+        get_field_climate(latitude, longitude),
+        get_soil_profile(latitude, longitude),
+        resolve_region(latitude, longitude),
+    )
+
+    climate = weather["climate"]
+    current = weather["current"]
+    label = (
+        region.get("locality")
+        or region.get("region")
+        or f"{latitude:.3f}, {longitude:.3f}"
+    )
+
+    return {
+        "location": {
+            "label": label,
+            "latitude": latitude,
+            "longitude": longitude,
+            "region": region.get("region"),
+            "locality": region.get("locality"),
+            "country": region.get("country"),
+            "country_code": region.get("country_code"),
+            "region_method": region.get("method"),
+            "region_approximate": bool(region.get("approximate")),
+            "source": region.get("source"),
+        },
+        "weather": {
+            "temperature_c": current.get("temperature_c"),
+            "condition": current.get("condition"),
+            "wind_kmh": current.get("wind_kmh"),
+            "humidity_pct": current.get("humidity_pct"),
+            "precipitation_mm": current.get("precipitation_mm"),
+            "rain_chance_pct": current.get("rain_chance_pct"),
+            "tomorrow_rain_mm": current.get("tomorrow_rain_mm"),
+            "tomorrow_date": current.get("tomorrow_date"),
+            "timezone": current.get("timezone"),
+        },
+        "climate": {
+            "month": date.today().strftime("%B"),
+            "season": current_season(),
+            "mean_temperature_c": climate.get("same_month_mean_temp_c"),
+            "month_rainfall_mm": climate.get("same_month_rainfall_mm"),
+            "annual_rainfall_mm": climate.get("annual_rainfall_mm"),
+            "years_used": climate.get("years_used"),
+            "years_span": climate.get("years_span"),
+            "note": (
+                "Averages of the last ten years of modelled historical weather. "
+                "This is a climate normal, not a drought or flood record."
+            ),
+        },
+        "soil": soil,
+        "summary": _summarise(region, weather, climate, soil),
+        "cached": weather_cached and soil_cached,
+        "source": {
+            "weather": weather["source"],
+            "soil": soil.get("source"),
+            "region": region.get("source"),
+        },
+    }
+
+
+@app.get("/api/soil-profile")
+async def soil_profile(latitude: Lat, longitude: Lon) -> dict:
+    """Modelled soil properties for a coordinate, from ISRIC SoilGrids."""
+    soil, cached = await get_soil_profile(latitude, longitude)
+    return {**soil, "latitude": latitude, "longitude": longitude, "cached": cached}
+
+
+@app.get("/api/crops")
+async def crops(
+    latitude: Lat,
+    longitude: Lon,
+    limit: int = Query(default=8, ge=1, le=50),
+    category: str | None = Query(default=None, description="Comma-separated categories"),
+    include_all: bool = Query(
+        default=False,
+        description=(
+            "Search the whole catalogue, including species that have no common name. "
+            "The default shortlist prefers crops a grower will recognise."
+        ),
+    ),
+) -> dict:
+    """Crops whose ECOCROP envelope fits this field's measured conditions."""
+    categories = (
+        {part.strip() for part in category.split(",") if part.strip()} if category else None
+    )
+    return await recommend_for(
+        latitude,
+        longitude,
+        limit=limit,
+        categories=categories,
+        named_only=not include_all,
+    )
+
+
+@app.get("/api/market-prices")
+async def market_prices(
+    q: str | None = Query(default=None, max_length=60, description="Filter by commodity name"),
+    limit: int = Query(default=40, ge=1, le=200),
+    include_unsold: bool = Query(
+        default=False,
+        description="Include commodities that were listed but did not trade that day",
+    ),
+) -> dict:
+    """Fresh produce prices from the Joburg Market daily sheet.
+
+    Figures carry the sheet's own as-of date. They are what traded on that day,
+    not live ticks, and the response says so.
+    """
+    prices, cached = await get_market_prices()
+    rows = prices["rows"]
+
+    if not include_unsold:
+        rows = [row for row in rows if row["price_per_kg"] is not None]
+    if q:
+        needle = q.strip().lower()
+        rows = [
+            row for row in rows
+            if needle in row["commodity_key"] or needle in row["commodity"].lower()
+        ]
+
+    return {
+        **prices,
+        "rows": rows[:limit],
+        "returned": min(len(rows), limit),
+        "cached": cached,
+    }
+
+
+# --- Authenticated endpoints ------------------------------------------------
 
 @app.get("/api/soil-scans")
-async def get_soil_scans(user=Depends(get_current_user)):
-    supabase = get_supabase()
-    response = supabase.table("soil_scans").select("*").eq("user_id", user.id).order("created_at", desc=True).execute()
-    return response.data
+async def list_scans(user=Depends(db.get_current_user)) -> list:
+    """The caller's photo-analysis history, newest first."""
+    response = (
+        db.get_supabase()
+        .table("soil_scans")
+        .select("id, location, analysis_result, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", desc=True)
+        .limit(50)
+        .execute()
+    )
+    return response.data or []
 
 
-@app.post('/api/soil-analysis')
-async def soil_analysis(request: SoilRequest, user=Depends(get_current_user)) -> dict:
-    """General field-photo analysis.
+@app.post("/api/soil-analysis")
+async def soil_analysis(
+    request: PhotoRequest,
+    user=Depends(db.get_current_user),
+) -> dict:
+    """Describe a field photo: soil, leaves, fruit, whole plant or pest.
 
-    Accepts any agricultural photo (soil, leaves, fruit, whole plant, pest)
-    and asks the model to identify what it sees before giving advice.
-    Endpoint name kept as /api/soil-analysis for backward compatibility
-    with the existing frontend — it handles more than soil now.
+    Was called /api/soil-analysis when it only handled soil and the name stuck;
+    it has handled any agricultural photo for a while.
     """
-    try:
-        raw_image = request.image or ''
-        if ',' in raw_image:
-            raw_image = raw_image.split(',', 1)[1]
-        image_bytes = base64.b64decode(raw_image, validate=False)
-    except (TypeError, ValueError) as error:
-        raise HTTPException(status_code=422, detail='That photo could not be read. Please take a new JPG or PNG photo.') from error
+    photo_analysis_limiter.hit(user.id)
 
-    prompt = f"""You are Nuru, an agricultural field adviser. Analyze this photo from a farmer and respond helpfully. The photo may show soil, plant leaves, fruit, a whole plant, or a pest.
+    image = ai.decode_data_url(request.image)
+    if len(image) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"That photo is {len(image) // 1_000_000} MB, which is too large. "
+                "Photos up to about 4 MB work best — most phones can shrink automatically."
+            ),
+        )
 
-Location: {request.location}
-Weather context: {request.weatherContext or 'not provided'}
-
-Begin your answer with one short line naming what the photo primarily shows, in this exact format:
-**Subject:** soil | plant leaves | fruit | whole plant | pest | unclear
-
-Then give three markdown bullet points adapted to that subject:
-* **What I can see**: only visual details actually present in the photo (colour, texture, lesions, damage, growth stage, moisture, insects, mould). Do not invent anything.
-* **What it might mean**: possible causes or conditions — labelled as possibilities, not diagnoses.
-* **Recommended action**: one practical next step for the farmer.
-
-Rules:
-- If the photo is unclear or does not show anything agricultural, say so plainly and suggest a clearer, well-lit close-up.
-- Never invent a crop species, disease name, exact nutrient value, or chemical treatment.
-- If symptoms suggest something serious, recommend a local extension officer.
-- Keep the whole answer under 160 words."""
-
-    answer = await gemini_answer(
-        [{'role': 'user', 'parts': [{'text': prompt}, {'inlineData': {'mimeType': request.mimeType, 'data': base64.b64encode(image_bytes).decode('ascii')}}]}],
+    prompt = ai.PHOTO_PROMPT.format(
+        location=request.location,
+        context=request.weatherContext or "not provided",
+    )
+    answer = await ai.answer(
+        [{"role": "user", "parts": [
+            {"text": prompt},
+            {"inlineData": {
+                "mimeType": request.mimeType,
+                "data": base64.b64encode(image).decode("ascii"),
+            }},
+        ]}],
         temperature=0.4,
         max_output_tokens=1000,
     )
 
-    supabase = get_supabase()
     try:
-        db_response = supabase.table("soil_scans").insert({
+        db.get_supabase().table("soil_scans").insert({
             "user_id": user.id,
             "location": request.location,
             "analysis_result": answer,
             "image_url": None,
         }).execute()
-        print('Supabase Insert Response:', db_response)
-    except Exception as exc:
-        print('Error in analyze_soil:', str(exc))
-        raise HTTPException(status_code=500, detail=f'Vision analysis succeeded, but the database save failed: {str(exc)}') from exc
-
-    return {'answer': answer}
-
-
-@app.post('/api/plant-analysis')
-async def plant_analysis(request: PlantRequest, user=Depends(get_current_user)) -> dict:
-    try:
-        raw_image = request.image or ''
-        if ',' in raw_image:
-            raw_image = raw_image.split(',', 1)[1]
-        image_bytes = base64.b64decode(raw_image, validate=False)
-    except (TypeError, ValueError) as error:
-        raise HTTPException(status_code=422, detail='That plant photo could not be read. Please take a new JPG or PNG photo.') from error
-
-    prompt = f"""You are Nuru, an expert agricultural crop adviser. Analyze this plant photo and provide a concise visual assessment for a farmer.
-
-Location: {request.location}
-Weather Context: {request.weatherContext or 'not provided'}
-
-Format the output concisely using exactly these markdown bullet points:
-* **Visible Plant Condition**: Describe only visible colour, growth, leaf, stem, fruit, or canopy observations.
-* **Possible Stress Signals**: Mention visible signs that could be consistent with pests, disease, water stress, or nutrient stress, but clearly label them as possibilities rather than diagnoses.
-* **Recommended Action**: Give one practical next step for inspecting or caring for the plant.
-
-If the image is unclear or does not show a plant, say so plainly and recommend taking a closer, well-lit photo. Never invent a crop type, disease, pest, nutrient level, or treatment. Do not claim a definitive diagnosis from an image alone."""
-    answer = await gemini_answer(
-        [{'role': 'user', 'parts': [{'text': prompt}, {'inlineData': {'mimeType': request.mimeType, 'data': base64.b64encode(image_bytes).decode('ascii')}}]}],
-        temperature=0.25,
-        max_output_tokens=1000,
-    )
-
-    supabase = get_supabase()
-    try:
-        payload = {
-            'user_id': user.id,
-            'photo_url': 'placeholder_base64_upload',
-            'analysis_result': answer,
-            'location': request.location,
-        }
-        if request.plant_id:
-            payload['plant_id'] = str(request.plant_id)
-
-        db_response = supabase.table('plant_photos').insert(payload).execute()
-        print('Saved plant photo analysis to Supabase:', db_response)
-    except Exception as exc:
-        print('Error in analyze_plant:', str(exc))
-        raise HTTPException(
-            status_code=500,
-            detail=f'Plant vision analysis succeeded, but the database save failed: {str(exc)}',
-        ) from exc
-
-    return {'answer': answer}
-
-
-@app.post('/api/farm-chat')
-async def farm_chat(request: ChatRequest) -> dict:
-    context = f'Field context supplied by the farmer: {request.fieldContext or "No field context has been supplied."}'
-    contents = []
-    for message in request.history[:-1]:
-        contents.append({'role': 'model' if message.role == 'assistant' else 'user', 'parts': [{'text': message.text}]})
-    contents.append({'role': 'user', 'parts': [{'text': f'{context}\n\nFarmer question: {request.message}'}]})
-    return {'answer': await gemini_answer(contents)}
-
-
-@app.get("/api/saved-fields")
-async def get_saved_fields(user=Depends(get_current_user)):
-    supabase = get_supabase()
-    response = supabase.table("field_profiles").select("*").eq("user_id", user.id).order("created_at", desc=True).execute()
-    return response.data
-
-
-@app.post("/api/save-field")
-async def save_field_profile(data: FieldProfileSaveRequest, user=Depends(get_current_user)):
-    supabase = get_supabase()
-
-    payload_variants = [
-        {
-            "user_id": user.id,
-            "field_name": data.label,
-            "location_point": {
-                "type": "Point",
-                "coordinates": [data.longitude, data.latitude],
-            },
-            "summary": data.summary,
-            "notes": data.notes,
-        },
-        {
-            "user_id": user.id,
-            "field_name": data.label,
-            "latitude": data.latitude,
-            "longitude": data.longitude,
-            "summary": data.summary,
-            "notes": data.notes,
-        },
-        {
-            "user_id": user.id,
-            "label": data.label,
-            "latitude": data.latitude,
-            "longitude": data.longitude,
-            "summary": data.summary,
-            "notes": data.notes,
-        },
-    ]
-
-    last_error = None
-    for payload in payload_variants:
-        try:
-            response = supabase.table("field_profiles").insert(payload).execute()
-            return response.data
-        except Exception as exc:
-            last_error = exc
-
-    raise HTTPException(
-        status_code=400,
-        detail=f"Could not save this field profile to the database. Expected columns do not match the current field_profiles table. Last error: {last_error}",
-    )
-
-
-# --- DATASET & USER ENDPOINTS (SUPABASE) ---
-
-@app.get("/api/crops")
-async def get_crop_recommendations(lat: float, lon: float):
-    """Return crops suited to the given coordinates.
-
-    Filtering pipeline:
-      1. Look up the province from (lat, lon) using bounding boxes.
-      2. Query crop_reference rows for that province only.
-      3. Narrow further by live temperature and current season.
-    """
-    supabase = get_supabase()
-
-    province = province_from_coords(lat, lon)
-
-    if province:
-        response = supabase.table("crop_reference").select("*").eq("province", province).execute()
-    else:
-        response = supabase.table("crop_reference").select("*").execute()
-    candidates = response.data or []
-
-    try:
-        weather = await fetch_weather(lat, lon)
-        current_temp = weather["weather"]["temperature"]
     except Exception as error:
-        print(f"[/api/crops] weather lookup failed, returning province crops: {error}", flush=True)
-        return {"status": "success", "province": province, "crops": candidates, "filtered": False}
+        # The analysis is the valuable part; losing the history write should not
+        # throw away an answer the user already paid a request for.
+        print(f"[/api/soil-analysis] history save failed: {error}", flush=True)
 
-    month = date.today().month
-    if month in (12, 1, 2):
-        current_season = 'Summer'
-    elif month in (3, 4, 5):
-        current_season = 'Autumn'
-    elif month in (6, 7, 8):
-        current_season = 'Winter'
-    else:
-        current_season = 'Spring'
-
-    def crop_matches(crop: dict) -> bool:
-        try:
-            temp_ok = crop["min_temp"] <= current_temp <= crop["max_temp"]
-        except (KeyError, TypeError):
-            temp_ok = False
-
-        season = (crop.get("growing_season") or '').strip()
-        if current_season == 'Spring':
-            season_ok = season in ('All Season', 'Summer')
-        elif current_season == 'Autumn':
-            season_ok = season in ('All Season', 'Winter')
-        else:
-            season_ok = season in ('All Season', current_season)
-
-        return temp_ok and season_ok
-
-    seen_names = set()
-    matching = []
-    for crop in candidates:
-        if not crop_matches(crop):
-            continue
-        name = crop.get("name")
-        if name in seen_names:
-            continue
-        seen_names.add(name)
-        matching.append(crop)
-
-    if not matching:
-        return {"status": "success", "province": province, "crops": candidates, "filtered": False}
-
-    return {"status": "success", "province": province, "crops": matching, "filtered": True}
+    return {"answer": answer}
 
 
-@app.get("/api/market-snapshot")
-async def get_market_snapshot(lat: float, lon: float):
-    """Return market price benchmarks for the province of (lat, lon)."""
-    supabase = get_supabase()
+@app.post("/api/farm-chat")
+async def farm_chat(
+    request: ChatRequest,
+    user=Depends(db.get_current_user),
+) -> dict:
+    """The AI adviser. Requires a session so the shared quota cannot be drained."""
+    chat_limiter.hit(user.id)
 
-    province = province_from_coords(lat, lon)
-
-    province_market = {
-        'Western Cape':   'Cape Town Market',
-        'KwaZulu-Natal':  'Durban Market',
-        'Free State':     'Bloemfontein Market',
-        'Limpopo':        'Polokwane Market',
-        'Mpumalanga':     'Mbombela Market',
-        'Northern Cape':  'Kimberley Market',
-        'North West':     'Mahikeng Market',
-        'Eastern Cape':   'Mthatha Market',
-        'Gauteng':        'Johannesburg Market',
-    }
-
-    target_market = province_market.get(province) if province else None
-
-    if target_market:
-        response = supabase.table("market_reference").select("*").eq("market_location", target_market).execute()
-        rows = response.data or []
-        if rows:
-            return {"status": "success", "province": province, "market_location": target_market, "market": rows}
-
-    response = supabase.table("market_reference").select("*").execute()
-    return {
-        "status": "success",
-        "province": province,
-        "market_location": "National snapshot",
-        "market": response.data or [],
-    }
+    context = (
+        "Field context supplied by the farmer: "
+        f"{request.fieldContext or 'No field context has been supplied.'}"
+    )
+    contents = [
+        {
+            "role": "model" if message.role == "assistant" else "user",
+            "parts": [{"text": message.text}],
+        }
+        for message in request.history
+    ]
+    contents.append({
+        "role": "user",
+        "parts": [{"text": f"{context}\n\nFarmer question: {request.message}"}],
+    })
+    return {"answer": await ai.answer(contents)}
 
 
-@app.get('/api/plants')
-def get_user_plants(user=Depends(get_current_user)):
-    """Fetch the authenticated user's tracked plants."""
-    supabase = get_supabase()
-    response = supabase.table("plants").select("*").eq("user_id", user.id).execute()
-    return response.data
+@app.get("/api/plants")
+async def list_plants(user=Depends(db.get_current_user)) -> list:
+    """The caller's tracked plants."""
+    response = (
+        db.get_supabase()
+        .table("plants")
+        .select("id, name, crop_type, planting_date, last_watered_at, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data or []
 
 
-@app.post('/api/plants')
-def create_user_plant(plant_data: dict, user=Depends(get_current_user)):
-    """Add a plant owned by the authenticated user."""
-    supabase = get_supabase()
-    new_plant = {
+@app.post("/api/plants", status_code=201)
+async def create_plant(plant: PlantCreate, user=Depends(db.get_current_user)) -> dict:
+    """Track a plant server-side.
+
+    These lived in localStorage, which meant a browser clear or a different phone
+    lost every plant and watering reminder the grower had recorded.
+    """
+    payload = {
         "user_id": user.id,
-        "name": plant_data.get("name"),
-        "crop_type": plant_data.get("crop_type"),
+        "name": plant.name.strip(),
+        "crop_type": (plant.crop_type or "").strip() or None,
+        "planting_date": plant.planting_date.isoformat() if plant.planting_date else None,
     }
-    response = supabase.table("plants").insert(new_plant).execute()
-    return response.data
+    response = db.get_supabase().table("plants").insert(payload).execute()
+    return (response.data or [payload])[0]
+
+
+@app.post("/api/plants/{plant_id}/watered")
+async def mark_watered(plant_id: UUID, user=Depends(db.get_current_user)) -> dict:
+    """Record a watering and update the plant's last-watered timestamp."""
+    supabase = db.get_supabase()
+
+    owned = (
+        supabase.table("plants")
+        .select("id")
+        .eq("id", str(plant_id))
+        .eq("user_id", user.id)
+        .execute()
+    )
+    if not owned.data:
+        raise HTTPException(status_code=404, detail="That plant is not in your garden.")
+
+    watering = supabase.table("plant_waterings").insert({
+        "plant_id": str(plant_id),
+        "user_id": user.id,
+    }).execute()
+    watered_at = (watering.data or [{}])[0].get("watered_at")
+
+    supabase.table("plants").update({"last_watered_at": watered_at}).eq(
+        "id", str(plant_id)
+    ).eq("user_id", user.id).execute()
+
+    return {"plant_id": str(plant_id), "watered_at": watered_at}
+
+
+@app.delete("/api/plants/{plant_id}", status_code=204)
+async def delete_plant(plant_id: UUID, user=Depends(db.get_current_user)) -> None:
+    """Remove a plant. Waterings cascade with it."""
+    db.get_supabase().table("plants").delete().eq("id", str(plant_id)).eq(
+        "user_id", user.id
+    ).execute()
