@@ -19,6 +19,7 @@ Reference: https://open-meteo.com/en/docs (WMO weather codes used for conditions
 
 from __future__ import annotations
 
+from calendar import month_name as MONTH_NAMES
 from datetime import date, timedelta
 
 from cache import Served, cached_call, coord_key, weather_cache
@@ -170,6 +171,10 @@ async def _fetch_climate(latitude: float, longitude: float) -> dict:
         "years_used": len(annual_totals),
         "annual_rainfall_mm": round(sum(annual_totals) / len(annual_totals)),
         "same_month": month,
+        # The name is derived here, from the same `month` the aggregation used,
+        # rather than recomputed by the caller. Two calls to date.today() either
+        # side of midnight could otherwise label July's normal "August".
+        "same_month_name": MONTH_NAMES[month],
         "same_month_mean_temp_c": _mean(same_month_temps),
         "same_month_rainfall_mm": (
             round(sum(same_month_rain.values()) / len(same_month_rain))

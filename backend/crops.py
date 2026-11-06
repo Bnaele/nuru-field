@@ -461,7 +461,9 @@ async def recommend_for(
         get_soil_profile(latitude, longitude),
     )
 
-    month_name = date.today().strftime("%B")
+    # Taken from the climate block rather than recomputed: the label must name the
+    # month the normals actually cover.
+    month_name = weather["climate"].get("same_month_name") or date.today().strftime("%B")
     context = _context_from(weather["climate"], soil, month_name, current_season())
 
     crops, considered = rank_crops(

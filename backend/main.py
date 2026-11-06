@@ -31,7 +31,7 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 import ai
 import db
@@ -99,6 +99,15 @@ class PlantCreate(BaseModel):
     crop_type: str | None = Field(default=None, max_length=80)
     planting_date: date | None = None
 
+    @field_validator("name")
+    @classmethod
+    def _name_is_not_blank(cls, value: str) -> str:
+        """`min_length=1` accepts a string of spaces, which strips to an empty row."""
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Give the plant a label, such as 'back bed' or 'Tomato'.")
+        return stripped
+
 
 # Annotated so each parameter gets its own Query instance. Sharing one Query object
 # as the default of several parameters makes FastAPI bind them all to the first
@@ -140,7 +149,7 @@ def _summarise(region: dict, weather: dict, climate: dict, soil: dict) -> str:
             + (f", wind {current['wind_kmh']:.0f} km/h." if current.get("wind_kmh") is not None else ".")
         )
 
-    month = date.today().strftime("%B")
+    month = climate.get("same_month_name") or date.today().strftime("%B")
     mean_temp = climate.get("same_month_mean_temp_c")
     month_rain = climate.get("same_month_rainfall_mm")
     annual = climate.get("annual_rainfall_mm")
@@ -214,7 +223,9 @@ async def field_profile(latitude: Lat, longitude: Lon) -> dict:
             "timezone": current.get("timezone"),
         },
         "climate": {
-            "month": date.today().strftime("%B"),
+            # The month the normals below actually cover, named by the source that
+            # aggregated them rather than by a second date.today() here.
+            "month": climate.get("same_month_name"),
             "season": current_season(),
             "mean_temperature_c": climate.get("same_month_mean_temp_c"),
             "month_rainfall_mm": climate.get("same_month_rainfall_mm"),
@@ -433,7 +444,7 @@ async def create_plant(plant: PlantCreate, user=Depends(db.get_current_user)) ->
     """
     payload = {
         "user_id": user.id,
-        "name": plant.name.strip(),
+        "name": plant.name,
         "crop_type": (plant.crop_type or "").strip() or None,
         "planting_date": plant.planting_date.isoformat() if plant.planting_date else None,
     }
