@@ -29,7 +29,10 @@ def load_local_env() -> None:
 load_local_env()
 
 # --- Application ------------------------------------------------------------
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+# 2.5-series models are closed to new API keys, so the default is a 3.x flash
+# model. Override with GEMINI_MODEL if your project has access to another one.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
 _origins = os.getenv("CORS_ORIGINS", "http://localhost:5173")
 CORS_ORIGINS = [origin.strip() for origin in _origins.split(",") if origin.strip()]
