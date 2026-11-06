@@ -18,7 +18,7 @@ function number(value, digits = 0) {
   return Number(value).toFixed(digits).replace(/\.0$/, '')
 }
 
-function WeatherCard({ weather }) {
+function WeatherCard({ weather, source }) {
   const temperature = number(weather?.temperature_c, 1)
   const wind = number(weather?.wind_kmh)
   const rainChance = number(weather?.rain_chance_pct)
@@ -35,13 +35,24 @@ function WeatherCard({ weather }) {
 
       <div className="weather-main">
         <strong>{temperature ?? '--'}<small>°C</small></strong>
-        <span>{weather ? 'Right now, from Open-Meteo' : 'Pick a field to load the forecast'}</span>
+        <span>
+          {weather
+            ? `Right now, from ${source?.name || 'a weather service'}`
+            : 'Pick a field to load the forecast'}
+        </span>
       </div>
 
       <div className="weather-stats">
         <div>
           <Icon name="water" size={18} />
-          <span>Rain chance<strong>{rainChance !== null ? `${rainChance}%` : '--'}</strong></span>
+          {/* Not every provider publishes a probability. Saying so beats a dash
+              that reads like a broken number. */}
+          <span>
+            Rain chance
+            <strong title={rainChance === null ? 'This weather service does not publish a rain probability.' : undefined}>
+              {rainChance !== null ? `${rainChance}%` : 'n/a'}
+            </strong>
+          </span>
         </div>
         <div>
           <Icon name="wind" size={18} />
@@ -187,7 +198,7 @@ export default function FieldDashboard({
           )}
         </div>
 
-        <WeatherCard weather={weather} />
+        <WeatherCard weather={weather} source={fieldProfile?.source?.weather} />
         <SoilCard soil={fieldProfile?.soil} />
       </div>
     </section>
