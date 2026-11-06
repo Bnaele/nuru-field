@@ -12,6 +12,7 @@ import './App.css'
 import Nav from './components/Nav'
 import AuthModal from './components/AuthModal'
 import ConfigNotice from './components/ConfigNotice'
+import ErrorBoundary from './components/ErrorBoundary'
 import HomePage from './pages/HomePage'
 import FieldPage from './pages/FieldPage'
 import ScanPage from './pages/ScanPage'
@@ -23,6 +24,17 @@ import { configProblem, supabase } from './supabaseClient'
 
 export default function App() {
   const [session, setSession] = useState(undefined)
+
+  // The API client holds the token itself, so no component has to pass it down.
+  // It is set here rather than in an effect on purpose: React runs a child's
+  // effects before the parent's, so an effect would hand FieldPage's plant fetch
+  // a token one commit too late. The first GET /api/plants after a reload then
+  // went out without an Authorization header, came back 401, and the cards sat on
+  // "Sign in to use this feature" until the page was remounted.
+  const applySession = useCallback((next) => {
+    setAccessToken(next?.access_token)
+    setSession(next ?? null)
+  }, [])
 
   const field = useFieldProfile()
   const scan = useSoilScan()
@@ -39,7 +51,7 @@ export default function App() {
     // Without a client the environment is incomplete. ConfigNotice explains that,
     // and there is no auth state to subscribe to.
     if (!supabase) {
-      setSession(null)
+      applySession(null)
       return undefined
     }
 
@@ -48,23 +60,18 @@ export default function App() {
     // corrupt. Unhandled, that rejection leaves the app on "Loading…" forever.
     supabase.auth
       .getSession()
-      .then(({ data }) => { if (active) setSession(data.session ?? null) })
-      .catch(() => { if (active) setSession(null) })
+      .then(({ data }) => { if (active) applySession(data.session) })
+      .catch(() => { if (active) applySession(null) })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, nextSession) => setSession(nextSession),
+      (_event, nextSession) => applySession(nextSession),
     )
 
     return () => {
       active = false
       subscription.unsubscribe()
     }
-  }, [])
-
-  // The API client holds the token itself, so no component has to pass it down.
-  useEffect(() => {
-    setAccessToken(session?.access_token)
-  }, [session])
+  }, [applySession])
 
   const handleSignOut = async () => {
     // Clear local state even when the network call fails, otherwise a failed
@@ -72,7 +79,7 @@ export default function App() {
     try {
       await supabase?.auth.signOut()
     } finally {
-      setSession(null)
+      applySession(null)
     }
   }
 
@@ -90,28 +97,34 @@ export default function App() {
 
   const isAuthed = session !== null
 
+  // One boundary per page, not one for the app: a card that throws should cost
+  // the grower that card, not the whole dashboard.
   const authedField = (
     <>
       <Nav onSignOut={handleSignOut} />
-      <FieldPage
-        fieldProfile={field.profile}
-        locationStatus={field.status}
-        locationTone={field.tone}
-        locationLoading={field.loading}
-        onUseMyLocation={field.locate}
-        onMapPick={field.load}
-      />
+      <ErrorBoundary section="Your field">
+        <FieldPage
+          fieldProfile={field.profile}
+          locationStatus={field.status}
+          locationTone={field.tone}
+          locationLoading={field.loading}
+          onUseMyLocation={field.locate}
+          onMapPick={field.load}
+        />
+      </ErrorBoundary>
     </>
   )
 
   const authedScan = (
     <>
       <Nav onSignOut={handleSignOut} />
-      <ScanPage
-        scan={scan}
-        fieldProfile={field.profile}
-        chat={chat}
-      />
+      <ErrorBoundary section="Scan and adviser">
+        <ScanPage
+          scan={scan}
+          fieldProfile={field.profile}
+          chat={chat}
+        />
+      </ErrorBoundary>
     </>
   )
 
@@ -127,6 +140,11 @@ export default function App() {
           on /scan, so that is where the old path now goes. */}
       <Route path="/adviser" element={<Navigate to="/scan" replace />} />
 
+      {/* AuthModal takes no callback: App already subscribes to Supabase's auth
+          state, so the session arrives on its own. It used to be passed
+          onAuthenticated, which App never supplied — the call threw into the
+          component's catch block after a perfectly good sign-in and reported the
+          failure as a sign-in error. */}
       <Route
         path="/login"
         element={isAuthed ? <Navigate to="/field" replace /> : <AuthModal />}

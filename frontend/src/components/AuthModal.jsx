@@ -1,6 +1,6 @@
 // AuthModal — sign in / sign up for Nuru Field.
 //
-// Two problems fixed in this version:
+// Three problems fixed in this version:
 //   1. Old success message told users to "check your email", but the
 //      Supabase project has email confirmation disabled. That confused
 //      people. Now we just sign them in immediately on success.
@@ -8,12 +8,17 @@
 //      already exists (security-by-obscurity to prevent account enumeration).
 //      The tell is an empty `user.identities` array. We now detect that and
 //      nudge the user to sign in instead of leaving them stuck.
+//   3. The component used to call an `onAuthenticated` prop that App never
+//      passed. A successful sign-in therefore threw a TypeError into the catch
+//      block below and reported it as a sign-in failure, while the session was
+//      in fact established. App subscribes to Supabase's auth state on its own,
+//      so the modal does not need to hand the session anywhere.
 
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import Icon from './Icon';
 
-export default function AuthModal({ onAuthenticated }) {
+export default function AuthModal() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -57,9 +62,9 @@ export default function AuthModal({ onAuthenticated }) {
       }
 
       // If Supabase returned a session (which it does when confirmation
-      // is disabled), the user is signed in immediately.
+      // is disabled), the user is signed in immediately and App's auth-state
+      // subscription takes over from here.
       if (data?.session) {
-        onAuthenticated(data.session.access_token);
         return;
       }
 
@@ -89,11 +94,10 @@ export default function AuthModal({ onAuthenticated }) {
       }
 
       if (data?.session) {
-        onAuthenticated(data.session.access_token);
-      } else {
-        setMessage('Sign-in succeeded but no session was returned. Try again.');
-        setError(true);
+        return;
       }
+      setMessage('Sign-in succeeded but no session was returned. Try again.');
+      setError(true);
     } catch (err) {
       setMessage(err?.message || 'Something went wrong. Please try again.');
       setError(true);
