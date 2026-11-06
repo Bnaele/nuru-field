@@ -219,9 +219,13 @@ def parse_price_list(html: str) -> dict:
 
 
 async def _fetch_prices() -> dict:
+    # The sheet is one small HTML page. At 30 seconds with a retry, an unreachable
+    # host held the whole market card for a minute before it could say it was
+    # unavailable; 12 seconds twice bounds that at roughly 25 while still riding
+    # out a slow morning at the market.
     html = await get_text(
         JOBURG_MARKET_URL,
-        timeout=30.0,
+        timeout=12.0,
         retries=1,
         unavailable_message=(
             "Joburg Market prices are temporarily unavailable. "

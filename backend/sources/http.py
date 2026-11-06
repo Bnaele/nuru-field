@@ -15,6 +15,25 @@ import httpx
 
 from config import HTTP_USER_AGENT
 
+# Provider names as a grower would recognise them. A 429 from a data provider is
+# the one failure where the culprit is worth naming: "Open-Meteo is rate-limiting
+# us" tells the user to try again, while "that data source" reads like the app is
+# broken. Deployed instances share their egress IP with other tenants, so being
+# throttled says nothing about this field or this app.
+_PROVIDER_NAMES = (
+    ("open-meteo.com", "Open-Meteo, the weather service"),
+    ("nominatim.openstreetmap.org", "OpenStreetMap's place lookup"),
+    ("isric.org", "SoilGrids, the soil service"),
+    ("joburgmarket.co.za", "Joburg Market"),
+)
+
+
+def _provider_label(url: str) -> str:
+    for fragment, name in _PROVIDER_NAMES:
+        if fragment in url:
+            return name
+    return "that data source"
+
 
 class UpstreamError(RuntimeError):
     """A data provider failed in a way the user should be told about."""
@@ -53,7 +72,8 @@ async def get_text(
 
             if response.status_code == 429:
                 last_error = UpstreamError(
-                    "That data source is rate-limiting us right now. Please try again shortly.",
+                    f"{_provider_label(url)} is rate-limiting us right now. "
+                    "Please try again shortly.",
                     status_code=503,
                 )
                 await asyncio.sleep(1.5 * (attempt + 1))
