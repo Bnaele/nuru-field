@@ -48,8 +48,14 @@ async function request(path, { method = 'GET', body, signal } = {}) {
   } catch (error) {
     // Abort is a caller decision, not a failure to report.
     if (error?.name === 'AbortError') throw error
+    // A rejected CORS preflight is indistinguishable from a dead server down here:
+    // the browser reports both as a bare TypeError with no status and no body.
+    // Naming the address that was tried, and the origin the API has to allow,
+    // turns the usual "but the backend IS running" into one glance.
+    const origin = typeof window === 'undefined' ? 'this origin' : window.location.origin
     throw new ApiError(
-      'Cannot reach the Nuru API. If you are running this locally, check that the backend is started on port 8000.',
+      `Cannot reach the Nuru API at ${DEFAULT_BASE_URL}. If it is running locally, check ` +
+        `that it is up and that its CORS_ORIGINS includes ${origin}.`,
       { unreachable: true },
     )
   }
