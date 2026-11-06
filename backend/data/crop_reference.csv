@@ -1,0 +1,67 @@
+name,scientific_name,category,min_temp,max_temp,min_rainfall_mm,max_rainfall_mm,min_ph,max_ph,source
+Okra,Abelmoschus esculentus,Vegetable,20,30,600,1200,5.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Onion,Allium cepa,Vegetable,12,25,350,600,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Garlic,Allium sativum,Vegetable,18,30,750,1600,6,6.6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Pineapple,Ananas comosus,Fruit,21,30,800,2500,4.5,8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Celery,Apium graveolens var. dulce,Vegetable,18,25,1000,1300,5.8,6.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Groundnut,Arachis hypogaea,Legume,22,32,600,1500,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Oats,Avena sativa,Grain,16,20,600,1000,5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Beetroot,Beta vulgaris,Vegetable,15,25,600,800,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Pak choi,Brassica chinensis,Vegetable,12,22,800,1600,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Canola,Brassica napus,Oilseed,15,25,500,1000,6.5,7.6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Cauliflower,Brassica oleracea var. botrytis,Vegetable,10,25,600,1100,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Cabbage,Brassica oleracea var. capitata,Vegetable,15,24,500,1000,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Broccoli,Brassica oleracea var. italica,Vegetable,15,24,900,1500,6,6.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Tea,Camellia sinensis,Beverage,20,30,1400,2000,4.5,5.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Pepper,Capsicum annuum,Vegetable,17,30,600,1250,5.5,6.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Chickpea,Cicer arietinum,Legume,15,29,600,1000,6,8.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Watermelon,Citrullus lanatus,Vegetable,20,35,500,700,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Lemon,Citrus limon,Fruit,15,28,1000,2300,6.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Orange,Citrus sinensis,Fruit,20,30,1200,2000,5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Coffee,Coffea arabica,Beverage,14,28,1400,2300,5.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Taro,Colocasia esculenta,Staple,21,28,1800,2700,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Melon,Cucumis melo,Vegetable,18,30,1000,1300,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Cucumber,Cucumis sativus,Vegetable,18,32,1000,1200,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Pumpkin,Cucurbita maxima,Vegetable,20,30,600,1000,5.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Squash,Cucurbita pepo,Vegetable,17,30,600,1500,5.5,6.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Carrot,Daucus carota,Vegetable,15,24,600,1200,5.8,6.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Fig,Ficus carica,Fruit,16,26,700,1500,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Strawberry,Fragaria x ananassa,Fruit,11,24,600,900,6,6.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Soybean,Glycine max,Legume,20,33,600,1500,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Cotton,Gossypium hirsutum,Fibre,22,36,750,1200,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Sunflower,Helianthus annuus,Oilseed,17,34,600,1000,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Barley,Hordeum vulgare,Grain,15,20,500,1000,6.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Sweet potato,Ipomoea batatas,Staple,18,28,750,2000,5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Lettuce,Lactuca sativa var. capitata,Vegetable,12,21,1100,1400,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Lentil,Lens culinaris,Legume,15,29,600,1000,5.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Tomato,Lycopersicon esculentum,Vegetable,20,27,600,1300,5.5,6.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Apple,Malus domestica,Fruit,14,27,700,2500,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Mango,Mangifera indica,Fruit,24,30,600,1500,5.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Cassava,Manihot esculenta,Staple,20,29,1000,1500,5.5,8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Lucerne,Medicago sativa,Fodder,21,27,600,1200,6.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Banana,Musa acuminata,Fruit,23,33,1200,3600,5.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Olive,Olea europaea,Fruit,20,34,400,700,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Rice,Oryza sativa,Grain,20,30,1500,2000,5.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Granadilla,Passiflora edulis,Fruit,20,30,900,2000,6,8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Parsnip,Pastinaca sativa,Vegetable,15,21,500,800,6,6.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Pearl millet,Pennisetum glaucum,Grain,25,35,400,900,5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Avocado,Persea americana,Fruit,14,40,500,2000,5,5.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Dry beans,Phaseolus vulgaris,Legume,16,25,500,2000,5.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Peas,Pisum sativum,Legume,10,24,800,1200,5.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Apricot,Prunus armeniaca,Fruit,14,35,900,1300,6.5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Peach,Prunus persica,Fruit,20,33,900,1100,5.5,6.3,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Guava,Psidium guajava,Fruit,20,33,1000,3000,5.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Pomegranate,Punica granatum,Fruit,23,32,900,1200,6.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Pear,Pyrus communis,Fruit,20,35,600,900,5.5,6.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Sugarcane,Saccharum officinarum,Industrial,24,37,1500,2000,5,8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Rye,Secale cereale,Grain,15,20,600,1000,5.5,6,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Sesame,Sesamum indicum,Oilseed,20,30,500,1000,5.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Brinjal,Solanum melongena,Vegetable,20,35,1200,1600,5.5,6.8,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Potato,Solanum tuberosum,Staple,15,25,500,800,5,6.2,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Sorghum,Sorghum bicolor,Grain,22,35,400,600,5.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Spinach,Spinacia oleracea,Vegetable,13,20,800,1200,6,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Wheat,Triticum aestivum,Grain,15,23,750,900,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Faba bean,Vicia faba,Legume,18,28,650,1000,6,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Cowpea,Vigna unguiculata,Legume,25,35,500,1500,5.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Grape,Vitis vinifera,Fruit,18,30,700,850,5.5,7.5,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
+Maize,Zea mays,Grain,18,33,600,1200,5,7,FAO ECOCROP via Zenodo 10.5281/zenodo.13319716
