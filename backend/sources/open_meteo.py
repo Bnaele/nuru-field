@@ -107,7 +107,18 @@ async def fetch_forecast(latitude: float, longitude: float) -> dict:
 
 
 async def fetch_climate(latitude: float, longitude: float) -> dict:
-    """Ten years of daily values, aggregated into the signals we actually use."""
+    """Ten years of daily values, aggregated into the signals we actually use.
+
+    Two aggregates come out of one request. The first is the same-month normal
+    and mean annual rainfall the dashboard and the crop scorer have always used.
+    The second is all twelve monthly normals, because "when should I plant
+    this?" cannot be answered from the current month alone: a crop whose window
+    opens in October needs October's temperature, not November's.
+
+    The daily minimum is pulled as well. It costs nothing on the same request and
+    it is the only honest way to say a month carries frost risk — a monthly mean
+    of 12 °C can still hide nights below zero.
+    """
     end = date.today() - timedelta(days=ARCHIVE_LAG_DAYS)
     start = end.replace(year=end.year - CLIMATE_YEARS)
 
@@ -118,7 +129,7 @@ async def fetch_climate(latitude: float, longitude: float) -> dict:
             "longitude": longitude,
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
-            "daily": "temperature_2m_mean,precipitation_sum",
+            "daily": "temperature_2m_mean,temperature_2m_min,precipitation_sum",
             "timezone": "auto",
         },
         timeout=45.0,
@@ -132,6 +143,7 @@ async def fetch_climate(latitude: float, longitude: float) -> dict:
     daily = payload.get("daily") or {}
     days: list[str] = daily.get("time") or []
     temps: list[float | None] = daily.get("temperature_2m_mean") or []
+    mins: list[float | None] = daily.get("temperature_2m_min") or []
     rain: list[float | None] = daily.get("precipitation_sum") or []
 
     if not days:
@@ -146,7 +158,14 @@ async def fetch_climate(latitude: float, longitude: float) -> dict:
     same_month_temps: list[float] = []
     same_month_rain: dict[int, float] = {}
 
-    for iso, temp, precip in zip(days, temps, rain):
+    # Monthly accumulators. Rain is summed per (year, month) so it can be
+    # averaged across years rather than across days; temperature and the daily
+    # minimum are pooled, which is the same thing for a month of equal length.
+    month_temps: dict[int, list[float]] = {}
+    month_mins: dict[int, list[float]] = {}
+    month_rain_by_year: dict[int, dict[int, float]] = {}
+
+    for iso, temp, tmin, precip in zip(days, temps, mins, rain):
         try:
             day = date.fromisoformat(iso)
         except ValueError:
@@ -155,6 +174,13 @@ async def fetch_climate(latitude: float, longitude: float) -> dict:
 
         per_year_rain[day.year] = per_year_rain.get(day.year, 0.0) + mm
         per_year_days[day.year] = per_year_days.get(day.year, 0) + 1
+
+        year_months = month_rain_by_year.setdefault(day.year, {})
+        year_months[day.month] = year_months.get(day.month, 0.0) + mm
+        if temp is not None:
+            month_temps.setdefault(day.month, []).append(float(temp))
+        if tmin is not None:
+            month_mins.setdefault(day.month, []).append(float(tmin))
 
         if day.month == month:
             if temp is not None:
@@ -172,10 +198,38 @@ async def fetch_climate(latitude: float, longitude: float) -> dict:
             status_code=502,
         )
 
+    # Only rainfall needs the complete-year filter: a partial month of rain would
+    # read as a dry month. Temperature is a mean, so a short month is still an
+    # honest sample of itself.
+    monthly_normals: list[dict] = []
+    for number in range(1, 13):
+        monthly_rain = [
+            month_rain_by_year[year][number]
+            for year in complete_years
+            if number in month_rain_by_year.get(year, {})
+        ]
+        mean_temp = _mean(month_temps.get(number, []))
+        mean_min = _mean(month_mins.get(number, []))
+        if mean_temp is None and not monthly_rain:
+            continue
+        monthly_normals.append(
+            {
+                "month": number,
+                "name": MONTH_NAMES[number],
+                "mean_temp_c": mean_temp,
+                "mean_min_temp_c": mean_min,
+                "rainfall_mm": (
+                    round(sum(monthly_rain) / len(monthly_rain)) if monthly_rain else None
+                ),
+                "years": len(monthly_rain),
+            }
+        )
+
     return {
         "years_span": [start.year, end.year],
         "years_used": len(annual_totals),
         "annual_rainfall_mm": round(sum(annual_totals) / len(annual_totals)),
+        "monthly_normals": monthly_normals,
         "same_month": month,
         # The name is derived here, from the same `month` the aggregation used,
         # rather than recomputed by the caller. Two calls to date.today() either

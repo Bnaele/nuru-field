@@ -37,6 +37,10 @@ ATTRIBUTION = "Climate normals by NASA POWER (MERRA-2, CC BY 4.0)"
 
 _MONTH_KEYS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
 
+# POWER publishes millimetres per day and temperatures in Celsius. Month totals
+# multiply the rate by the length of a standard (non-leap) month.
+_DAYS_IN_MONTH = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
 # POWER's documented fill value for "no data here".
 _FILL = -999.0
 
@@ -62,7 +66,11 @@ async def fetch_climate(latitude: float, longitude: float) -> dict:
     payload = await get_json(
         NASA_POWER_CLIMATOLOGY,
         params={
-            "parameters": "T2M,PRECTOTCORR",
+            # T2M_MIN is the coldest value in the record, not a mean of the daily
+            # minimum: for Johannesburg it reports -4 °C for July, against an
+            # average July night near 4 °C. It is kept under a name that says
+            # exactly that, so nothing downstream can mistake it for a normal.
+            "parameters": "T2M,T2M_MIN,PRECTOTCORR",
             "community": "AG",
             "latitude": latitude,
             "longitude": longitude,
@@ -78,6 +86,7 @@ async def fetch_climate(latitude: float, longitude: float) -> dict:
 
     parameters = (payload.get("properties") or {}).get("parameter") or {}
     temperature = parameters.get("T2M") or {}
+    record_low = parameters.get("T2M_MIN") or {}
     rainfall = parameters.get("PRECTOTCORR") or {}
 
     month = date.today().month
@@ -101,12 +110,36 @@ async def fetch_climate(latitude: float, longitude: float) -> dict:
             status_code=502,
         )
 
+    monthly_normals: list[dict] = []
+    for index, key in enumerate(_MONTH_KEYS):
+        temp = _value(temperature, key)
+        per_day = _value(rainfall, key)
+        lowest = _value(record_low, key)
+        if temp is None and per_day is None:
+            continue
+        monthly_normals.append(
+            {
+                "month": index + 1,
+                "name": MONTH_NAMES[index + 1],
+                "mean_temp_c": round(temp, 1) if temp is not None else None,
+                # POWER cannot supply a mean of the daily minimum in this
+                # endpoint, so it is left null rather than filled with the
+                # record low wearing the wrong label.
+                "mean_min_temp_c": None,
+                "rainfall_mm": (
+                    round(per_day * _DAYS_IN_MONTH[index]) if per_day is not None else None
+                ),
+                "record_low_temp_c": round(lowest, 1) if lowest is not None else None,
+            }
+        )
+
     return {
         # POWER computes its climatology over the whole reanalysis record rather
         # than a requested window, so there is no start/end year to report.
         "years_span": None,
         "years_used": None,
         "annual_rainfall_mm": annual_mm,
+        "monthly_normals": monthly_normals,
         "same_month": month,
         "same_month_name": MONTH_NAMES[month],
         "same_month_mean_temp_c": (

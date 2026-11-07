@@ -10,7 +10,7 @@
 // everywhere.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../components/Icon'
 import { api } from '../lib/api'
 
@@ -28,9 +28,13 @@ function formatDate(value) {
 }
 
 export default function MarketPage() {
+  // A crop guide links straight to the section it is about - /market?kind=input
+  // &category=tools - so "you will need a spade" lands on spades instead of on
+  // the whole market for the grower to search again.
+  const [params] = useSearchParams()
   const [groups, setGroups] = useState([])
-  const [tab, setTab] = useState('input')
-  const [section, setSection] = useState('')
+  const [tab, setTab] = useState(params.get('kind') === 'produce' ? 'produce' : 'input')
+  const [section, setSection] = useState(params.get('category') || '')
   const [query, setQuery] = useState('')
   const [needle, setNeedle] = useState('')
   const [rows, setRows] = useState([])
@@ -89,6 +93,14 @@ export default function MarketPage() {
     () => group?.sections.find((item) => item.key === section) || null,
     [group, section],
   )
+
+  // A section named in the URL may not exist on this tab, or may have been
+  // renamed since the link was written. Clearing it shows the whole tab rather
+  // than an empty grid with no chip highlighted.
+  useEffect(() => {
+    if (!section || !group) return
+    if (!group.sections.some((item) => item.key === section)) setSection('')
+  }, [group, section])
 
   const switchTab = useCallback((kind) => {
     setTab(kind)

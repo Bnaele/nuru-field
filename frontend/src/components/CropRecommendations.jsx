@@ -26,6 +26,7 @@
 // does not.
 
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Icon from './Icon'
 import { api } from '../lib/api'
 
@@ -296,6 +297,13 @@ export default function CropRecommendations({ fieldProfile }) {
         )}
 
         {crops.length > 0 && (
+          <p className="crop-guide-hint">
+            Tap a name for its planting guide: the months that suit your field, the
+            steps, and the tools you will need.
+          </p>
+        )}
+
+        {crops.length > 0 && (
           <ul className="crop-list">
             {crops.map((crop) => {
               const named = crop.name !== crop.scientific_name
@@ -303,7 +311,10 @@ export default function CropRecommendations({ fieldProfile }) {
                 <li key={`${crop.name}-${crop.scientific_name}`}>
                   <ScoreBadge score={crop.score} />
                   <div className="crop-body">
-                    <strong>{crop.name}</strong>
+                    <Link to={`/crop/${crop.slug}`} className="crop-name-link">
+                      {crop.name}
+                      <Icon name="arrow" size={13} />
+                    </Link>
                     {/* An unnamed species shows its family instead of repeating
                         the Latin binomial that is already the heading. */}
                     <em className="crop-latin">

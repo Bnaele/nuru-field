@@ -39,6 +39,7 @@ import marketplace
 from config import CORS_ORIGINS, current_season
 from crops import recommend_for
 from geo import resolve_region
+from guides import detail_for
 from ratelimit import chat_limiter, photo_analysis_limiter
 from sources.http import UpstreamError
 from sources.joburg_market import get_market_prices, scope_note
@@ -351,6 +352,34 @@ async def crops(
         named_only=not include_all,
         query=q,
     )
+
+
+@app.get("/api/crops/{slug}")
+async def crop_detail(
+    slug: str,
+    latitude: Annotated[
+        float | None,
+        Query(alias="lat", ge=-90, le=90, description="Field latitude, for the planting months"),
+    ] = None,
+    longitude: Annotated[
+        float | None,
+        Query(alias="lon", ge=-180, le=180, description="Field longitude, for the planting months"),
+    ] = None,
+) -> dict:
+    """Everything about one species: its windows, this field's fit, the months
+    that suit it here, and the steps and tools to plant it.
+
+    Coordinates are optional. Without them the page still carries the crop's
+    ECOCROP windows, the steps and the tools, and says the planting months need
+    a field - which is what happens if someone opens the page from a bookmark.
+    """
+    payload = await detail_for(slug, latitude, longitude)
+    if payload is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No species in the catalogue matches '{slug}'.",
+        )
+    return payload
 
 
 @app.get("/api/market-prices")

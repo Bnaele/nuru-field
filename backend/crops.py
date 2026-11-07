@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import re
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -140,6 +141,30 @@ def _alias_index() -> dict[str, frozenset[str]]:
 # adjusted; this only decides who appears first when two crops score alike, so a
 # grower sees "Cabbage" before an unnamed forestry species with the same fit.
 NAMED_ORDER_BONUS = 5
+
+
+def slugify(text: str) -> str:
+    """A URL-safe handle for a species: `Musa acuminata` -> `musa-acuminata`.
+
+    Built from the scientific name rather than the common name because the
+    catalogue is unique on the scientific name and is not unique on the common
+    one, and because a common name in another language would change the URL.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
+
+
+@lru_cache(maxsize=1)
+def _by_slug() -> dict[str, dict]:
+    """Species keyed by slug, so a detail page is one dictionary hit."""
+    index: dict[str, dict] = {}
+    for crop in load_reference():
+        index.setdefault(slugify(crop["scientific_name"]), crop)
+    return index
+
+
+def find_by_slug(slug: str) -> dict | None:
+    """The catalogue row behind a `/crop/<slug>` page, or None."""
+    return _by_slug().get(slugify(slug))
 
 
 def _optional_float(value: str | None) -> float | None:
@@ -331,6 +356,7 @@ def evaluate_crop(crop: dict, context: dict) -> dict:
 
     return {
         "name": crop["name"],
+        "slug": slugify(crop["scientific_name"]),
         "scientific_name": crop["scientific_name"],
         "family": crop["family"],
         "category": crop["category"],
@@ -429,6 +455,28 @@ def _context_from(climate: dict, soil: dict, month_name: str, season: str) -> di
     }
 
 
+async def field_context(
+    latitude: float, longitude: float
+) -> tuple[dict, dict, dict, bool]:
+    """The climate-and-soil picture both the shortlist and a single crop need.
+
+    Returns (context, weather, soil, served_from_cache). The weather block keeps
+    the full climate payload, including the twelve monthly normals, because a
+    crop page answers a question the shortlist never asks: which months suit
+    this plant here, not just whether this month does.
+    """
+    (weather, weather_cached), (soil, soil_cached) = await asyncio.gather(
+        get_field_climate(latitude, longitude),
+        get_soil_profile(latitude, longitude),
+    )
+
+    # Taken from the climate block rather than recomputed: the label must name the
+    # month the normals actually cover.
+    month_name = weather["climate"].get("same_month_name") or date.today().strftime("%B")
+    context = _context_from(weather["climate"], soil, month_name, current_season())
+    return context, weather, soil, (weather_cached and soil_cached)
+
+
 @lru_cache(maxsize=1)
 def category_counts() -> dict[str, int]:
     """How many species sit in each category, for the filter chips.
@@ -456,15 +504,7 @@ async def recommend_for(
     Climate and soil are fetched concurrently and share their caches with the
     field profile endpoint, so this does not add upstream traffic.
     """
-    (weather, weather_cached), (soil, soil_cached) = await asyncio.gather(
-        get_field_climate(latitude, longitude),
-        get_soil_profile(latitude, longitude),
-    )
-
-    # Taken from the climate block rather than recomputed: the label must name the
-    # month the normals actually cover.
-    month_name = weather["climate"].get("same_month_name") or date.today().strftime("%B")
-    context = _context_from(weather["climate"], soil, month_name, current_season())
+    context, weather, soil, cached = await field_context(latitude, longitude)
 
     crops, considered = rank_crops(
         context,
@@ -487,7 +527,7 @@ async def recommend_for(
     return {
         "crops": crops,
         "context": {
-            "month": month_name,
+            "month": context["month_name"],
             "season": context["season"],
             "mean_temperature_c": context["same_month_mean_temp_c"],
             "annual_rainfall_mm": context["annual_rainfall_mm"],
@@ -510,6 +550,6 @@ async def recommend_for(
                 "with this field's measured values. Score 0-100; confidence falls when "
                 "an input is missing."
             ),
-            "cached": weather_cached and soil_cached,
+            "cached": cached,
         },
     }

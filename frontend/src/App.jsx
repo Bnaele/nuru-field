@@ -16,6 +16,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import HomePage from './pages/HomePage'
 import FieldPage from './pages/FieldPage'
 import ScanPage from './pages/ScanPage'
+import CropPage from './pages/CropPage'
 import MarketPage from './pages/MarketPage'
 import SellPage from './pages/SellPage'
 import InboxPage from './pages/InboxPage'
@@ -147,6 +148,17 @@ export default function App() {
 
       <Route path="/field" element={isAuthed ? authedField : <Navigate to="/login" replace />} />
       <Route path="/scan" element={isAuthed ? authedScan : <Navigate to="/login" replace />} />
+      {/* The crop guide takes the field, not coordinates in the URL: the field
+          hook restores the saved location on mount, so a refresh or a bookmark
+          lands on the same months the recommendation card was scored against. */}
+      <Route
+        path="/crop/:slug"
+        element={
+          isAuthed
+            ? authedPage('Crop guide', <CropPage fieldProfile={field.profile} />)
+            : <Navigate to="/login" replace />
+        }
+      />
       <Route
         path="/market"
         element={isAuthed ? authedPage('Market', <MarketPage />) : <Navigate to="/login" replace />}

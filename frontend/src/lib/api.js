@@ -154,6 +154,15 @@ export const api = {
       options,
     ),
 
+  /**
+   * One species in full: its ECOCROP windows, this field's fit, the planting
+   * months computed from the field's own normals, the steps and the tools.
+   * `latitude`/`longitude` are optional - without them the months are withheld
+   * and the rest of the page still works.
+   */
+  crop: (slug, latitude, longitude, options = {}) =>
+    request(`/api/crops/${encodeURIComponent(slug)}${query({ lat: latitude, lon: longitude })}`, options),
+
   // The coordinates are optional and never change a price. They let the reply
   // name the market nearest to the field, since these prices are Joburg's.
   marketPrices: ({ q, limit, includeUnsold, latitude, longitude, ...options } = {}) =>
