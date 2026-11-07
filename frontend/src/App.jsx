@@ -16,6 +16,9 @@ import ErrorBoundary from './components/ErrorBoundary'
 import HomePage from './pages/HomePage'
 import FieldPage from './pages/FieldPage'
 import ScanPage from './pages/ScanPage'
+import MarketPage from './pages/MarketPage'
+import SellPage from './pages/SellPage'
+import InboxPage from './pages/InboxPage'
 import { useAdviserChat } from './hooks/useAdviserChat'
 import { useFieldProfile } from './hooks/useFieldProfile'
 import { useSoilScan } from './hooks/useSoilScan'
@@ -128,12 +131,34 @@ export default function App() {
     </>
   )
 
+  // The market is deliberately a page of its own rather than another card on
+  // the dashboard: it holds a lot of other people's stock, and squeezing it into
+  // a card made it look like a widget instead of a place to buy and sell.
+  const authedPage = (section, page) => (
+    <>
+      <Nav onSignOut={handleSignOut} />
+      <ErrorBoundary section={section}>{page}</ErrorBoundary>
+    </>
+  )
+
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
 
       <Route path="/field" element={isAuthed ? authedField : <Navigate to="/login" replace />} />
       <Route path="/scan" element={isAuthed ? authedScan : <Navigate to="/login" replace />} />
+      <Route
+        path="/market"
+        element={isAuthed ? authedPage('Market', <MarketPage />) : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/sell"
+        element={isAuthed ? authedPage('Sell a listing', <SellPage />) : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/inbox"
+        element={isAuthed ? authedPage('Messages', <InboxPage />) : <Navigate to="/login" replace />}
+      />
 
       {/* Hero linked to /adviser, which was never a route: it fell through the
           catch-all and silently sent people to the home page. The adviser lives

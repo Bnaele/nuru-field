@@ -135,6 +135,49 @@ export const api = {
 
   soilScans: (options = {}) => request('/api/soil-scans', options),
 
+  // --- Market ---------------------------------------------------------------
+  // Browsing is public; posting, messaging and the profile need a session.
+
+  /** The sections the market is split into, with a live count in each. */
+  marketSections: (options = {}) => request('/api/market/sections', options),
+
+  listings: ({ kind, category, q, limit, ...options } = {}) =>
+    request(`/api/listings${query({ kind, category, q, limit })}`, options),
+
+  listing: (listingId, options = {}) => request(`/api/listings/${listingId}`, options),
+
+  createListing: (payload, options = {}) =>
+    request('/api/listings', { method: 'POST', body: payload, ...options }),
+
+  myListings: (options = {}) => request('/api/listings/mine', options),
+
+  setListingStatus: (listingId, status, options = {}) =>
+    request(`/api/listings/${listingId}`, { method: 'PATCH', body: { status }, ...options }),
+
+  expressInterest: (listingId, message, options = {}) =>
+    request(`/api/listings/${listingId}/interest`, {
+      method: 'POST',
+      body: { message },
+      ...options,
+    }),
+
+  conversations: (options = {}) => request('/api/conversations', options),
+
+  conversation: (conversationId, options = {}) =>
+    request(`/api/conversations/${conversationId}`, options),
+
+  sendMessage: (conversationId, body, options = {}) =>
+    request(`/api/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: { body },
+      ...options,
+    }),
+
+  profile: (options = {}) => request('/api/profile', options),
+
+  saveProfile: (payload, options = {}) =>
+    request('/api/profile', { method: 'PUT', body: payload, ...options }),
+
   analysePhoto: ({ image, mimeType, location, weatherContext }, options = {}) =>
     request('/api/soil-analysis', {
       method: 'POST',

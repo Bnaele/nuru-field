@@ -583,6 +583,19 @@ async def delete_plant(plant_id: UUID, user=Depends(db.get_current_user)) -> Non
 # for a checkout.
 
 
+@app.get("/api/market/sections")
+async def market_sections() -> dict:
+    """The sections the market is separated into, with live listing counts.
+
+    Public on purpose: a buyer should be able to see what is on sale in their
+    area before making an account.
+    """
+    try:
+        return marketplace.sections_payload()
+    except LookupError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
 @app.get("/api/listings")
 async def browse_listings(
     kind: Literal["input", "produce"] | None = Query(
@@ -619,7 +632,10 @@ async def create_listing(listing: ListingCreate, user=Depends(db.get_current_use
             status_code=409,
             detail="Set a display name before you post — buyers need to know who they are talking to.",
         )
-    return marketplace.create_listing(user.id, listing.model_dump())
+    try:
+        return marketplace.create_listing(user.id, listing.model_dump())
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @app.get("/api/listings/{listing_id}")

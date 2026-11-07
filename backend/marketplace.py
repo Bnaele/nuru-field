@@ -21,6 +21,141 @@ log = logging.getLogger(__name__)
 
 KINDS = ("input", "produce")
 
+# How the market is split.
+#
+# The sections follow the order a grower meets the problems — seed, soil, feed,
+# water, tools, pests, then getting the harvest out — instead of the way a
+# wholesaler sorts stock ("amendments", "horticultural inputs"). Every section
+# carries one sentence saying what it is for, because the label on its own
+# assumes knowledge this app exists to supply. A new section is one entry here:
+# the tabs, the chips, the sell form and the validation all read this dict.
+SECTIONS: dict[str, tuple[dict, ...]] = {
+    "input": (
+        {
+            "key": "seeds",
+            "label": "Seeds & seedlings",
+            "icon": "leaf",
+            "hint": "Where a crop starts: seed packets, seedlings, tubers and cuttings.",
+        },
+        {
+            "key": "soil",
+            "label": "Soil & compost",
+            "icon": "cloud",
+            "hint": "To fill a bed or fix ground that is too sandy, too clayey or worn out.",
+        },
+        {
+            "key": "fertiliser",
+            "label": "Fertiliser & plant food",
+            "icon": "water",
+            "hint": "To feed a growing crop: compost, granular feed or a foliar spray.",
+        },
+        {
+            "key": "irrigation",
+            "label": "Watering & irrigation",
+            "icon": "water",
+            "hint": "Watering cans, hose, drippers, tanks and small pumps.",
+        },
+        {
+            "key": "tools",
+            "label": "Tools & equipment",
+            "icon": "spark",
+            "hint": "Hoes, forks, rakes, sprayers and wheelbarrows to work the ground.",
+        },
+        {
+            "key": "protection",
+            "label": "Pest & disease control",
+            "icon": "pulse",
+            "hint": "Sprays, traps, netting and shade cloth to protect what you planted.",
+        },
+        {
+            "key": "livestock",
+            "label": "Animal feed & supplies",
+            "icon": "leaf",
+            "hint": "Feed, fencing, chicks and supplies for small stock.",
+        },
+        {
+            "key": "packing",
+            "label": "Packing & selling",
+            "icon": "upload",
+            "hint": "Crates, bags, boxes and scales to get a harvest to a buyer.",
+        },
+        {
+            "key": "services",
+            "label": "Services",
+            "icon": "pulse",
+            "hint": "Ploughing, transport, fencing or soil testing done for you.",
+        },
+        {
+            "key": "other",
+            "label": "Other supplies",
+            "icon": "spark",
+            "hint": "Anything useful that does not fit the sections above.",
+        },
+    ),
+    "produce": (
+        {
+            "key": "vegetables",
+            "label": "Vegetables",
+            "icon": "leaf",
+            "hint": "Spinach, tomato, cabbage, onion, pumpkin and the rest.",
+        },
+        {
+            "key": "fruit",
+            "label": "Fruit",
+            "icon": "leaf",
+            "hint": "Fresh fruit by the box, crate or kilogram.",
+        },
+        {
+            "key": "herbs",
+            "label": "Herbs & spices",
+            "icon": "leaf",
+            "hint": "Fresh bunches, dried bunches, or potted herbs for a kitchen.",
+        },
+        {
+            "key": "grain",
+            "label": "Grain, maize & legumes",
+            "icon": "leaf",
+            "hint": "Maize, beans, groundnuts and small grain by the bag.",
+        },
+        {
+            "key": "animal",
+            "label": "Eggs, meat & dairy",
+            "icon": "pulse",
+            "hint": "Eggs, poultry, small stock and dairy from the holding.",
+        },
+        {
+            "key": "other",
+            "label": "Other produce",
+            "icon": "spark",
+            "hint": "Seed saved to sell, seedlings, compost or anything else grown.",
+        },
+    ),
+}
+
+# The two halves of the market, named from the seller's side of the counter.
+KIND_LABELS: dict[str, dict[str, str]] = {
+    "input": {
+        "label": "Supplies",
+        "hint": "Seed, soil, feed, tools and water - what you buy before you plant.",
+    },
+    "produce": {
+        "label": "Harvest",
+        "hint": "Vegetables, fruit, eggs and grain sold by growers like you.",
+    },
+}
+
+CATEGORY_KEYS: dict[str, set[str]] = {
+    kind: {section["key"] for section in sections} for kind, sections in SECTIONS.items()
+}
+
+
+def category_label(kind: str, key: str) -> str:
+    """The human name for a stored category key, for display on a card."""
+    for section in SECTIONS.get(kind, ()):
+        if section["key"] == key:
+            return section["label"]
+    return key.replace("_", " ").title() if key else "Other"
+
 # PostgREST says PGRST205 (or "relation ... does not exist") when a table the API
 # queries was never created. On a fresh database that is a setup step, not a bug,
 # so it is reported as one.
@@ -89,10 +224,23 @@ def _names_for(seller_ids: list[str]) -> dict[str, str]:
 
 
 def create_listing(user_id: str, data: dict) -> dict:
+    """Insert a listing, refusing a category the market does not have.
+
+    The check lives here rather than in the route model because it depends on
+    both fields at once: "seeds" is valid under Supplies and meaningless under
+    Harvest, and a listing in a category no section renders would be invisible
+    the moment it was posted.
+    """
+    kind = data["kind"]
+    category = (data.get("category") or "").strip()
+    if category not in CATEGORY_KEYS.get(kind, set()):
+        allowed = ", ".join(section["key"] for section in SECTIONS[kind])
+        raise ValueError(f"Pick a section for this listing: {allowed}.")
+
     payload = {
         "seller_id": user_id,
-        "kind": data["kind"],
-        "category": data.get("category") or "",
+        "kind": kind,
+        "category": category,
         "title": data["title"].strip(),
         "description": (data.get("description") or "").strip(),
         "price_cents": data.get("price_cents"),
@@ -107,6 +255,9 @@ def create_listing(user_id: str, data: dict) -> dict:
     created = (response.data or [payload])[0]
     created["seller_name"] = (get_profile(user_id) or {}).get("display_name") or "A grower"
     created["images"] = []
+    # The sell page thanks the seller by section name, so the label travels back
+    # with the created row rather than being looked up again in the browser.
+    created["category_label"] = category_label(created["kind"], created["category"])
     return created
 
 
@@ -140,7 +291,45 @@ def browse(
     for row in rows:
         row["seller_name"] = names.get(row["seller_id"], "A grower")
         row["images"] = images.get(row["id"], [])
+        row["category_label"] = category_label(row["kind"], row["category"])
     return rows
+
+
+def sections_payload() -> dict:
+    """Every section with how many live listings are in it.
+
+    Counted in Python from one query rather than a dozen count queries: the
+    market is small, and the round trips would cost more than the rows.
+    """
+    try:
+        response = _table("listings").select("kind, category").eq(
+            "status", "active"
+        ).execute()
+    except Exception as error:
+        if _is_missing_table(error):
+            raise LookupError(NOT_MIGRATED) from error
+        raise
+
+    counts: dict[tuple[str, str], int] = {}
+    for row in response.data or []:
+        key = (row.get("kind") or "input", (row.get("category") or "").strip())
+        counts[key] = counts.get(key, 0) + 1
+
+    groups = []
+    for kind in KINDS:
+        sections = [
+            {**section, "count": counts.get((kind, section["key"]), 0)}
+            for section in SECTIONS[kind]
+        ]
+        groups.append(
+            {
+                "kind": kind,
+                **KIND_LABELS[kind],
+                "count": sum(section["count"] for section in sections),
+                "sections": sections,
+            }
+        )
+    return {"groups": groups, "total": sum(group["count"] for group in groups)}
 
 
 def get_listing(listing_id: str) -> dict | None:
