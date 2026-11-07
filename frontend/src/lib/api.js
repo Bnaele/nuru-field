@@ -119,12 +119,16 @@ export const api = {
       options,
     ),
 
-  marketPrices: ({ q, limit, includeUnsold, ...options } = {}) =>
+  // The coordinates are optional and never change a price. They let the reply
+  // name the market nearest to the field, since these prices are Joburg's.
+  marketPrices: ({ q, limit, includeUnsold, latitude, longitude, ...options } = {}) =>
     request(
       `/api/market-prices${query({
         q,
         limit,
         include_unsold: includeUnsold ? 'true' : undefined,
+        lat: latitude,
+        lon: longitude,
       })}`,
       options,
     ),

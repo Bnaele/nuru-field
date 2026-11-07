@@ -36,7 +36,9 @@ export default function FieldPage({
       />
       <FieldMap onPick={onMapPick} />
       <CropRecommendations fieldProfile={fieldProfile} />
-      <MarketSnapshot />
+      {/* Published prices never change with the field; the market named above
+          them does, so the card knows where the field is. */}
+      <MarketSnapshot location={fieldProfile?.location} />
       <MyPlants plants={plants} />
       <WateringReminders plants={plants} />
     </main>

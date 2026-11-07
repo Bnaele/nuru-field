@@ -19,12 +19,18 @@ function kilograms(value) {
   return tonnes >= 1 ? `${tonnes.toFixed(1)} t` : `${Math.round(Number(value))} kg`
 }
 
-export default function MarketSnapshot() {
+export default function MarketSnapshot({ location }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [includeUnsold, setIncludeUnsold] = useState(false)
+
+  // The field's coordinates, when one has been picked. They do not filter the
+  // sheet — every market's prices are Johannesburg's — they let the card name
+  // the market that is actually nearest.
+  const latitude = Number.isFinite(location?.latitude) ? location.latitude : undefined
+  const longitude = Number.isFinite(location?.longitude) ? location.longitude : undefined
 
   // Debounce so typing "tomato" is one request, not six.
   const debounceRef = useRef(null)
@@ -50,6 +56,8 @@ export default function MarketSnapshot() {
           q: debouncedQuery || undefined,
           limit: 24,
           includeUnsold,
+          latitude,
+          longitude,
           signal: controller.signal,
         })
         if (!cancelled) setData(response)
@@ -69,7 +77,7 @@ export default function MarketSnapshot() {
       cancelled = true
       controller.abort()
     }
-  }, [debouncedQuery, includeUnsold])
+  }, [debouncedQuery, includeUnsold, latitude, longitude])
 
   const rows = data?.rows || []
 

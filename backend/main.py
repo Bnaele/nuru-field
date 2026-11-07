@@ -40,7 +40,8 @@ from crops import recommend_for
 from geo import resolve_region
 from ratelimit import chat_limiter, photo_analysis_limiter
 from sources.http import UpstreamError
-from sources.joburg_market import get_market_prices
+from sources.joburg_market import get_market_prices, scope_note
+from sources.markets import nearest_market
 from sources.soilgrids import get_soil_profile
 from sources.weather import get_field_climate
 
@@ -299,11 +300,29 @@ async def market_prices(
         default=False,
         description="Include commodities that were listed but did not trade that day",
     ),
+    lat: float | None = Query(
+        default=None,
+        alias="lat",
+        ge=-90,
+        le=90,
+        description="Field latitude. With lon, the response names the field's nearest market",
+    ),
+    lon: float | None = Query(
+        default=None,
+        alias="lon",
+        ge=-180,
+        le=180,
+        description="Field longitude. With lat, the response names the field's nearest market",
+    ),
 ) -> dict:
     """Fresh produce prices from the Joburg Market daily sheet.
 
     Figures carry the sheet's own as-of date. They are what traded on that day,
     not live ticks, and the response says so.
+
+    The coordinates are optional and change no figure. They exist so the reply
+    can say which market is actually nearest to the field, because these prices
+    are Johannesburg's whoever is asking.
     """
     prices, cached = await get_market_prices()
     rows = prices["rows"]
@@ -317,8 +336,17 @@ async def market_prices(
             if needle in row["commodity_key"] or needle in row["commodity"].lower()
         ]
 
+    nearest = (
+        nearest_market(lat, lon) if lat is not None and lon is not None else None
+    )
+
     return {
         **prices,
+        # `prices` is the shared cached payload, so the per-location line is
+        # written into a copy: mutating it would show the first caller's
+        # market to everyone else for the rest of the hour.
+        "source": {**prices["source"], "scope": scope_note(nearest)},
+        "nearest_market": nearest,
         "rows": rows[:limit],
         "returned": min(len(rows), limit),
         "cached": cached,

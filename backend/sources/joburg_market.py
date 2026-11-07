@@ -246,6 +246,35 @@ def _source_block() -> dict:
     }
 
 
+def scope_note(nearest: dict | None) -> str:
+    """The line that names whose prices these are, given where the field is.
+
+    Without a location the card can only say it is showing Johannesburg. With
+    one it can be specific: a grower near Johannesburg is reading their own
+    market, and everyone else is told which market is theirs before they read a
+    single number. The payload is cached nationally, so this runs per request.
+    """
+    if not nearest:
+        return SCOPE_NOTE
+    if nearest.get("is_price_source"):
+        return (
+            f"These are your own market's prices — {nearest['town']} is about "
+            f"{nearest['distance_km']} km from this field."
+        )
+    # "Durban Fresh Produce Market in Durban" reads like a mistake, so the town
+    # is only repeated when the market's name does not already carry it.
+    where = (
+        nearest["name"]
+        if nearest["town"].lower() in nearest["name"].lower()
+        else f"{nearest['name']} in {nearest['town']}"
+    )
+    return (
+        f"Your nearest market is {where}, about "
+        f"{nearest['distance_km']} km away. Nuru has no free price feed for it yet, so "
+        f"these are Johannesburg's — the national benchmark, not your local market's."
+    )
+
+
 async def _fetch_prices() -> dict:
     # The sheet is one small HTML page. At 30 seconds with a retry, an unreachable
     # host held the whole market card for a minute before it could say it was
