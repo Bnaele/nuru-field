@@ -58,6 +58,23 @@ ATTRIBUTION = (
 )
 PRICE_LIST_PAGE = "https://joburgmarket.co.za/daily-price-list/"
 
+# The market's host drops connections from some cloud networks outright - the
+# deployed Render service is one of them, while the same URL answers in about
+# three seconds from a home line. So a public reader relay is tried when the
+# direct attempt fails: it fetches the same URL and hands back the page as
+# served. The numbers are still Joburg Market's and the as-of date is still the
+# sheet's own; only the carriage differs, and the payload records which route
+# delivered it. Without this, production could never refresh and showed the last
+# sheet saved from a workstation forever.
+RELAY_URL = "https://r.jina.ai/{url}"
+RELAY_HEADERS = {"X-Return-Format": "html"}
+
+# The direct attempt is given seconds, not half a minute: when a host refuses a
+# network it refuses immediately, and every second spent waiting is a second the
+# relay is not being tried.
+DIRECT_TIMEOUT_S = 6.0
+RELAY_TIMEOUT_S = 20.0
+
 # The sheet is one market's prices. Saying so is the difference between "this is
 # what produce fetches" and a farmer in Umlazi believing these are Durban prices.
 SCOPE_NOTE = (
@@ -275,20 +292,48 @@ def scope_note(nearest: dict | None) -> str:
     )
 
 
-async def _fetch_prices() -> dict:
-    # The sheet is one small HTML page. At 30 seconds with a retry, an unreachable
-    # host held the whole market card for a minute before it could say it was
-    # unavailable; 12 seconds twice bounds that at roughly 25 while still riding
-    # out a slow morning at the market.
-    html = await get_text(
+UNAVAILABLE = (
+    "Nuru could not reach the Joburg Market price sheet, and has no earlier "
+    "sheet saved yet."
+)
+
+
+async def _direct_sheet() -> str:
+    return await get_text(
         JOBURG_MARKET_URL,
-        timeout=12.0,
-        retries=1,
-        unavailable_message=(
-            "Nuru could not reach the Joburg Market price sheet, and has no earlier "
-            "sheet saved yet."
-        ),
+        timeout=DIRECT_TIMEOUT_S,
+        retries=0,
+        unavailable_message=UNAVAILABLE,
     )
+
+
+async def _relayed_sheet() -> str:
+    return await get_text(
+        RELAY_URL.format(url=JOBURG_MARKET_URL),
+        timeout=RELAY_TIMEOUT_S,
+        retries=0,
+        headers=RELAY_HEADERS,
+        unavailable_message=UNAVAILABLE,
+    )
+
+
+async def _fetch_sheet() -> tuple[str, str]:
+    """The sheet, plus which route delivered it."""
+    try:
+        return await _direct_sheet(), "direct"
+    except UpstreamError as error:
+        log.info(
+            "Direct market fetch failed (%s); trying the reader relay",
+            error.message,
+        )
+    return await _relayed_sheet(), "relay"
+
+
+async def _fetch_prices() -> dict:
+    # The sheet is one small HTML page, and a failure here is bounded: six
+    # seconds direct, then twenty through the relay, and after that the archived
+    # sheet answers instead.
+    html, transport = await _fetch_sheet()
     parsed = parse_price_list(html)
     as_of = parsed["as_of"]
     traded = [row for row in parsed["rows"] if row["price_per_kg"] is not None]
@@ -304,6 +349,10 @@ async def _fetch_prices() -> dict:
         "listed_count": len(parsed["rows"]),
         "source_url": JOBURG_MARKET_URL,
         "price_list_page": PRICE_LIST_PAGE,
+        # "direct" from a network the market allows, "relay" when the sheet had
+        # to be carried through the reader. Kept in the payload rather than
+        # logged, so a stale card can be explained without reading server logs.
+        "fetch_via": transport,
         "source": _source_block(),
     }
 
