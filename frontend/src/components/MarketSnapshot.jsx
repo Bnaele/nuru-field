@@ -110,6 +110,12 @@ export default function MarketSnapshot() {
 
         {loading && <p className="market-loading">Reading the Joburg Market sheet…</p>}
 
+        {/* The sheet is a daily snapshot, so an older one is still genuinely
+            useful. Say which day it is instead of leaving the card empty. */}
+        {!loading && data?.stale && data?.stale_note && (
+          <p className="market-stale" role="status">{data.stale_note}</p>
+        )}
+
         {error && (
           <p className="card-error" role="alert">
             <strong>Prices unavailable.</strong> {error}

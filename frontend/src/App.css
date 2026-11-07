@@ -215,6 +215,17 @@
   margin: 0.75rem 0;
 }
 
+/* Shown when the live sheet could not be fetched and an earlier one is standing
+   in. Quiet, because the prices below are still real — just from another day. */
+.market-stale {
+  background: #fdf5e3;
+  border-left: 3px solid #d9a441;
+  color: #6b4e12;
+  font-size: 0.88rem;
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.8rem;
+}
+
 .market-table {
   width: 100%;
   border-collapse: collapse;

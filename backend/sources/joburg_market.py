@@ -37,13 +37,18 @@ Reference: https://joburgmarket.co.za/daily-price-list/
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 from datetime import date
 from html.parser import HTMLParser
 
 from cache import Served, cached_call, market_cache
 from config import JOBURG_MARKET_URL, MARKET_TTL_S
+from db import get_supabase, is_configured
 from sources.http import UpstreamError, get_text
+
+log = logging.getLogger(__name__)
 
 SOURCE_NAME = "Joburg Market"
 MARKET_LABEL = "Joburg Market"
@@ -228,8 +233,8 @@ async def _fetch_prices() -> dict:
         timeout=12.0,
         retries=1,
         unavailable_message=(
-            "Joburg Market prices are temporarily unavailable. "
-            "The market publishes between 12:00 and 13:00 on weekdays."
+            "Nuru could not reach the Joburg Market price sheet, and has no earlier "
+            "sheet saved yet."
         ),
     )
     parsed = parse_price_list(html)
@@ -260,12 +265,194 @@ async def _fetch_prices() -> dict:
 
 
 async def get_market_prices() -> tuple[dict, bool]:
-    """Today's sheet, cached for an hour (the market publishes once a weekday)."""
-    served: Served = await cached_call(
-        market_cache,
-        namespace="joburg_market",
-        key="daily",
-        ttl=MARKET_TTL_S,
-        producer=_fetch_prices,
-    )
+    """The latest sheet Nuru can vouch for, cached for an hour.
+
+    A sheet that parses is written to `market_prices`, and a failed fetch falls
+    back to the most recent one archived there. Prices are a daily snapshot, not
+    a live feed: yesterday's realised averages are still worth reading, and are
+    far more useful than a card that says "unavailable" because a host refused
+    one connection.
+    """
+    try:
+        served: Served = await cached_call(
+            market_cache,
+            namespace="joburg_market",
+            key="daily",
+            ttl=MARKET_TTL_S,
+            producer=_fetch_prices,
+        )
+    except UpstreamError as error:
+        archived = await _latest_archived()
+        if archived is None:
+            raise
+        log.warning(
+            "Live market sheet unavailable (%s); serving the archived sheet for %s",
+            error.message,
+            archived["as_of_label"],
+        )
+        return archived, True
+
+    if not served.cached:
+        await _archive_sheet(served.value)
     return served.value, served.cached
+
+
+# --- Archive -----------------------------------------------------------------
+# Columns follow the `market_prices` table in schema.sql. `commodity_key` is not
+# stored because it is derived from the display name on the way back out.
+
+def _archive_rows(payload: dict) -> list[dict]:
+    as_of = payload.get("as_of")
+    if not as_of:
+        return []
+
+    # The sheet lists a few commodities twice under spellings that title-case to
+    # the same name, and Postgres refuses an upsert whose batch contains the same
+    # conflict key twice. Keep one row per display name, preferring the entry that
+    # actually traded and, between those, the larger volume.
+    chosen: dict[str, dict] = {}
+    for row in payload["rows"]:
+        key = row["commodity"]
+        existing = chosen.get(key)
+        if existing is not None:
+            traded = row.get("price_per_kg") is not None
+            was_traded = existing.get("price_per_kg") is not None
+            heavier = (row.get("total_kg_sold") or 0) > (existing.get("total_kg_sold") or 0)
+            if not (traded and not was_traded) and not (traded == was_traded and heavier):
+                continue
+
+        chosen[key] = {
+            "market": MARKET_LABEL,
+            "as_of": as_of,
+            "commodity": key,
+            "price_per_kg": row.get("price_per_kg"),
+            "total_value_zar": row.get("total_value_zar"),
+            "total_kg_sold": row.get("total_kg_sold"),
+            "qty_available_kg": row.get("qty_available"),
+            "source_url": JOBURG_MARKET_URL,
+        }
+
+    return list(chosen.values())
+
+
+async def _archive_sheet(payload: dict) -> None:
+    """Write a freshly parsed sheet, so a later outage still has something to show."""
+    if not is_configured():
+        return
+    rows = _archive_rows(payload)
+    if not rows:
+        return
+
+    def write():
+        return (
+            get_supabase()
+            .table("market_prices")
+            .upsert(rows, on_conflict="market,as_of,commodity")
+            .execute()
+        )
+
+    try:
+        # The Supabase client is synchronous; off-thread so a slow write cannot
+        # hold up every other request this worker is serving.
+        await asyncio.to_thread(write)
+    except Exception as error:  # archiving is best-effort and must never fail a read
+        log.warning("Could not archive the market sheet: %s", error)
+
+
+async def _latest_archived() -> dict | None:
+    """Most recent archived sheet, shaped exactly like a live one."""
+    if not is_configured():
+        return None
+
+    def read():
+        client = get_supabase()
+        latest = (
+            client.table("market_prices")
+            .select("as_of")
+            .eq("market", MARKET_LABEL)
+            .order("as_of", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not latest.data:
+            return None
+        as_of = latest.data[0]["as_of"]
+        sheet = (
+            client.table("market_prices")
+            .select("commodity,price_per_kg,total_value_zar,total_kg_sold,qty_available_kg")
+            .eq("market", MARKET_LABEL)
+            .eq("as_of", as_of)
+            .execute()
+        )
+        return as_of, (sheet.data or [])
+
+    try:
+        found = await asyncio.to_thread(read)
+    except Exception as error:
+        log.warning("Could not read the archived market sheet: %s", error)
+        return None
+
+    if not found:
+        return None
+    return _payload_from_archive(*found)
+
+
+def _payload_from_archive(as_of: str, records: list[dict]) -> dict | None:
+    """Rebuild the response shape from stored rows.
+
+    Numeric columns arrive from PostgREST as strings, so they are cast back to
+    floats: the UI formats them with toFixed and a string would throw.
+    """
+
+    def number(value):
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    rows = [
+        {
+            "commodity": record["commodity"],
+            "commodity_key": commodity_key(record["commodity"]),
+            "price_per_kg": number(record.get("price_per_kg")),
+            "total_value_zar": number(record.get("total_value_zar")),
+            # Units sold are not archived; the per-kilogram figure is what the
+            # card ranks and displays.
+            "total_qty_sold": None,
+            "total_kg_sold": number(record.get("total_kg_sold")),
+            "qty_available": number(record.get("qty_available_kg")),
+        }
+        for record in records
+    ]
+    if not rows:
+        return None
+
+    day = date.fromisoformat(str(as_of)[:10])
+    traded = [row for row in rows if row["price_per_kg"] is not None]
+
+    return {
+        "market": MARKET_LABEL,
+        "as_of": day.isoformat(),
+        "as_of_label": f"{day.day} {day.strftime('%B %Y')}",
+        "rows": rows,
+        "traded_count": len(traded),
+        "listed_count": len(rows),
+        "source_url": JOBURG_MARKET_URL,
+        "price_list_page": PRICE_LIST_PAGE,
+        "stale": True,
+        "stale_note": (
+            f"Nuru could not reach today's Joburg Market sheet, so this is the "
+            f"sheet from {day.day} {day.strftime('%B %Y')} — the most recent one saved."
+        ),
+        "source": {
+            "name": SOURCE_NAME,
+            "attribution": ATTRIBUTION,
+            "note": (
+                "Prices are the previous weekday's traded average as published by "
+                "the market. They are a reference for what produce is fetching, not "
+                "a quote for your produce."
+            ),
+        },
+    }
