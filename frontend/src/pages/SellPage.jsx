@@ -7,7 +7,7 @@
 // Prices are typed in rands and stored in cents, because floating-point money
 // is a defect waiting to happen.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../components/Icon'
 import { api } from '../lib/api'
@@ -17,6 +17,12 @@ const BLANK = {
   region: '',
   contactNote: '',
 }
+
+// Mirrors the API's own limits, so a photo that would be refused is caught
+// before the listing is created rather than after.
+const MAX_PHOTOS = 4
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 export default function SellPage() {
   const navigate = useNavigate()
@@ -36,8 +42,23 @@ export default function SellPage() {
     region: '',
   })
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [problem, setProblem] = useState('')
   const [created, setCreated] = useState(null)
+  const [photos, setPhotos] = useState([])
+
+  // Previews are object URLs, so they have to be handed back. The ref keeps the
+  // latest list reachable from the unmount cleanup without re-running it on
+  // every added photo.
+  const photosRef = useRef(photos)
+  photosRef.current = photos
+
+  useEffect(
+    () => () => {
+      photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.url))
+    },
+    [],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -68,6 +89,43 @@ export default function SellPage() {
   }, [])
 
   const group = useMemo(() => groups.find((item) => item.kind === kind), [groups, kind])
+
+  function addPhotos(event) {
+    const picked = Array.from(event.target.files || [])
+    // Clearing the input lets the same file be chosen again after a removal.
+    event.target.value = ''
+    setProblem('')
+
+    const accepted = []
+    for (const file of picked) {
+      if (photos.length + accepted.length >= MAX_PHOTOS) {
+        setProblem(`Up to ${MAX_PHOTOS} photos per listing.`)
+        break
+      }
+      if (!PHOTO_TYPES.includes(file.type)) {
+        setProblem(`${file.name} is not a JPEG, PNG or WebP.`)
+        continue
+      }
+      if (file.size > MAX_PHOTO_BYTES) {
+        setProblem(`${file.name} is larger than 5 MB.`)
+        continue
+      }
+      accepted.push({
+        file,
+        url: URL.createObjectURL(file),
+        key: `${file.name}-${file.size}-${accepted.length}-${Date.now()}`,
+      })
+    }
+    if (accepted.length) setPhotos((current) => [...current, ...accepted])
+  }
+
+  function removePhoto(key) {
+    setPhotos((current) => {
+      const target = current.find((photo) => photo.key === key)
+      if (target) URL.revokeObjectURL(target.url)
+      return current.filter((photo) => photo.key !== key)
+    })
+  }
 
   function switchKind(next) {
     setKind(next)
@@ -118,7 +176,25 @@ export default function SellPage() {
         quantity: listing.quantity.trim(),
         region: listing.region.trim(),
       })
-      setCreated(result)
+
+      // Photos need a listing id, so they go up immediately after it exists. A
+      // refused photo must not cost the seller the advert: the count is reported
+      // on the success screen instead of failing the whole post.
+      let uploaded = 0
+      if (photos.length) {
+        setUploading(true)
+        for (const photo of photos) {
+          try {
+            await api.uploadListingPhoto(result.id, photo.file)
+            uploaded += 1
+          } catch {
+            // Counted below, never thrown: the listing is already live.
+          }
+        }
+      }
+      photos.forEach((photo) => URL.revokeObjectURL(photo.url))
+      setPhotos([])
+      setCreated({ ...result, photoCount: photos.length, uploaded })
     } catch (failure) {
       // 409 means the API has no profile for this account: fall back to the
       // name step rather than leaving the seller staring at an error.
@@ -126,6 +202,7 @@ export default function SellPage() {
       setProblem(failure.message)
     } finally {
       setSaving(false)
+      setUploading(false)
     }
   }
 
@@ -156,6 +233,13 @@ export default function SellPage() {
               It is in {created.category_label || 'your section'} on the market now. Buyers
               message you here, and you reply in Messages.
             </p>
+            {created.photoCount > 0 && (
+              <p>
+                {created.uploaded === created.photoCount
+                  ? `${created.uploaded} ${created.uploaded === 1 ? 'photo' : 'photos'} attached.`
+                  : `${created.uploaded} of ${created.photoCount} photos uploaded - the listing is live either way.`}
+              </p>
+            )}
             <div className="market-success-actions">
               <Link to="/market" className="button button-primary">
                 See it on the market
@@ -309,6 +393,40 @@ export default function SellPage() {
               placeholder="Variety, size, condition, when it is ready, delivery or collection."
             />
 
+            <span className="market-form-legend">Photos (optional, up to {MAX_PHOTOS})</span>
+            <p className="market-form-note">
+              A photo of the actual goods is what makes a seller look real. Pictures from
+              your phone are fine.
+            </p>
+            <div className="market-photos">
+              {photos.map((photo) => (
+                <div className="market-photo" key={photo.key}>
+                  <img src={photo.url} alt="" />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(photo.key)}
+                    aria-label="Remove photo"
+                  >
+                    <Icon name="close" size={14} />
+                  </button>
+                </div>
+              ))}
+              {photos.length < MAX_PHOTOS && (
+                <label className="market-photo-add" htmlFor="sell-photos">
+                  <Icon name="camera" size={20} />
+                  <span>Add photo</span>
+                </label>
+              )}
+              <input
+                id="sell-photos"
+                className="file-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                onChange={addPhotos}
+              />
+            </div>
+
             <div className="market-form-row">
               <div>
                 <label htmlFor="sell-price">Price in rand (optional)</label>
@@ -357,7 +475,7 @@ export default function SellPage() {
 
             {problem && <p className="form-error">{problem}</p>}
             <button type="submit" className="button button-primary" disabled={saving}>
-              {saving ? 'Posting…' : 'Post listing'}
+              {saving ? (uploading ? 'Uploading photos…' : 'Posting…') : 'Post listing'}
             </button>
             <p className="market-form-foot">
               No payment is taken here. You and the buyer agree the price and the handover

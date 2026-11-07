@@ -76,6 +76,41 @@ async function request(path, { method = 'GET', body, signal } = {}) {
   return payload
 }
 
+/**
+ * Multipart upload, for listing photos only.
+ *
+ * It cannot reuse request(): FormData sets its own Content-Type boundary, and
+ * overriding it to application/json would make the server reject the body.
+ */
+async function upload(path, file, { signal } = {}) {
+  const headers = {}
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+
+  const body = new FormData()
+  body.append('file', file)
+
+  let response
+  try {
+    response = await fetch(`${DEFAULT_BASE_URL}${path}`, {
+      method: 'POST',
+      headers,
+      body,
+      signal,
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error
+    throw new ApiError(`Cannot reach the Nuru API at ${DEFAULT_BASE_URL}.`, { unreachable: true })
+  }
+
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new ApiError(payload?.detail || `The API returned ${response.status}.`, {
+      status: response.status,
+    })
+  }
+  return payload
+}
+
 function query(params) {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -148,6 +183,10 @@ export const api = {
 
   createListing: (payload, options = {}) =>
     request('/api/listings', { method: 'POST', body: payload, ...options }),
+
+  /** One photo, JPEG/PNG/WebP up to 5 MB. The bucket is private. */
+  uploadListingPhoto: (listingId, file, options = {}) =>
+    upload(`/api/listings/${listingId}/photos`, file, options),
 
   myListings: (options = {}) => request('/api/listings/mine', options),
 

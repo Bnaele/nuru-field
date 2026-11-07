@@ -420,7 +420,19 @@ def attach_image(
     if owned_listing(user_id, listing_id) is None:
         return None
 
-    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+    # The extension decides what the browser will do with the signed link, so it
+    # follows the declared type rather than the uploaded filename: a phone photo
+    # called "image" with no dot is still a JPEG.
+    suffix = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+    }.get(content_type)
+    if suffix is None:
+        suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+        if suffix not in ("jpg", "jpeg", "png", "webp"):
+            suffix = "jpg"
+
     path = f"{user_id}/{uuid4()}.{suffix}"
     get_supabase().storage.from_("listing-photos").upload(
         path, data, {"content-type": content_type}
