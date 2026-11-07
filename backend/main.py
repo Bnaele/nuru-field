@@ -28,13 +28,14 @@ from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 import ai
 import db
+import marketplace
 from config import CORS_ORIGINS, current_season
 from crops import recommend_for
 from geo import resolve_region
@@ -76,6 +77,11 @@ async def upstream_error_handler(_request, error: UpstreamError) -> JSONResponse
 
 MAX_IMAGE_BYTES = 4_500_000  # ~4.5 MB decoded, well under every provider cap
 
+# Listing photos are user-supplied file uploads rather than base64 in a JSON
+# body, so they get the bucket's own limits: 5 MB, three formats.
+MAX_PHOTO_BYTES = 5_000_000
+ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
 
 class PhotoRequest(BaseModel):
     image: str = Field(min_length=100, max_length=7_000_000)
@@ -108,6 +114,61 @@ class PlantCreate(BaseModel):
         if not stripped:
             raise ValueError("Give the plant a label, such as 'back bed' or 'Tomato'.")
         return stripped
+
+
+class ListingCreate(BaseModel):
+    """What a grower types to advertise something.
+
+    Money arrives as integer cents. A price is optional because plenty of
+    smallholder trade is "make me an offer" — the form allows it, the browse grid
+    then says so instead of printing R0.
+    """
+
+    kind: Literal["input", "produce"]
+    title: str = Field(min_length=3, max_length=120)
+    description: str = Field(default="", max_length=2000)
+    category: str = Field(default="", max_length=60)
+    price_cents: int | None = Field(default=None, ge=0, le=100_000_000)
+    unit: str = Field(default="", max_length=40)
+    quantity: str = Field(default="", max_length=40)
+    region: str = Field(default="", max_length=80)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+
+    @field_validator("title")
+    @classmethod
+    def _title_is_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Give the listing a title, such as 'Seed potatoes, 25 kg'.")
+        return stripped
+
+
+class ListingStatus(BaseModel):
+    status: Literal["active", "paused", "sold", "removed"]
+
+
+class InterestIn(BaseModel):
+    message: str = Field(default="", max_length=1000)
+
+
+class MessageIn(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("body")
+    @classmethod
+    def _body_is_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Write a message first.")
+        return stripped
+
+
+class ProfileIn(BaseModel):
+    display_name: str = Field(min_length=2, max_length=60)
+    region: str = Field(default="", max_length=80)
+    role: Literal["seller", "buyer", "both"] = "both"
+    contact_note: str = Field(default="", max_length=200)
 
 
 # Annotated so each parameter gets its own Query instance. Sharing one Query object
@@ -514,3 +575,133 @@ async def delete_plant(plant_id: UUID, user=Depends(db.get_current_user)) -> Non
     db.get_supabase().table("plants").delete().eq("id", str(plant_id)).eq(
         "user_id", user.id
     ).execute()
+
+
+# --- Marketplace -------------------------------------------------------------
+# Prototype by construction: listings, interest, conversation. There is no order,
+# no cart and no payment route anywhere below, so nothing here can be mistaken
+# for a checkout.
+
+
+@app.get("/api/listings")
+async def browse_listings(
+    kind: Literal["input", "produce"] | None = Query(
+        default=None, description="'input' for seed, feed, compost, tools; 'produce' for what comes off the field"
+    ),
+    category: str | None = Query(default=None, max_length=60),
+    q: str | None = Query(default=None, max_length=80),
+    limit: int = Query(default=60, ge=1, le=120),
+) -> list:
+    """What is on sale right now. Looking does not require an account."""
+    return marketplace.browse(kind=kind, category=category, q=q, limit=limit)
+
+
+# Declared before `/api/listings/{listing_id}`, or "mine" would be parsed as an
+# id and rejected as an invalid UUID.
+@app.get("/api/listings/mine")
+async def my_listings(user=Depends(db.get_current_user)) -> list:
+    """The caller's own listings, whatever their status."""
+    return marketplace.my_listings(user.id)
+
+
+@app.post("/api/listings", status_code=201)
+async def create_listing(listing: ListingCreate, user=Depends(db.get_current_user)) -> dict:
+    """Advertise something.
+
+    A display name is required first: an advert with nobody behind it is the
+    fastest way to make a marketplace feel like a scam.
+    """
+    if marketplace.get_profile(user.id) is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Set a display name before you post — buyers need to know who they are talking to.",
+        )
+    return marketplace.create_listing(user.id, listing.model_dump())
+
+
+@app.get("/api/listings/{listing_id}")
+async def get_listing(listing_id: UUID) -> dict:
+    listing = marketplace.get_listing(str(listing_id))
+    if listing is None:
+        raise HTTPException(status_code=404, detail="That listing does not exist.")
+    return listing
+
+
+@app.patch("/api/listings/{listing_id}")
+async def set_listing_status(
+    listing_id: UUID, body: ListingStatus, user=Depends(db.get_current_user)
+) -> dict:
+    """Mark a listing sold, pause it, or take it down."""
+    updated = marketplace.set_status(user.id, str(listing_id), body.status)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="That listing is not yours.")
+    return updated
+
+
+@app.post("/api/listings/{listing_id}/photos", status_code=201)
+async def upload_listing_photo(
+    listing_id: UUID,
+    file: UploadFile = File(..., description="JPEG, PNG or WebP, up to 5 MB"),
+    user=Depends(db.get_current_user),
+) -> dict:
+    """Attach one photo. The bucket is private, so it is stored by path and
+    served back as a short-lived signed link."""
+    if file.content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(status_code=415, detail="Photos must be JPEG, PNG or WebP.")
+    data = await file.read()
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=413, detail="That photo is larger than 5 MB.")
+    attached = marketplace.attach_image(
+        user.id, str(listing_id), file.filename or "photo.jpg", file.content_type, data
+    )
+    if attached is None:
+        raise HTTPException(status_code=404, detail="That listing is not yours.")
+    return attached
+
+
+@app.post("/api/listings/{listing_id}/interest", status_code=201)
+async def express_interest(
+    listing_id: UUID, body: InterestIn, user=Depends(db.get_current_user)
+) -> dict:
+    """Say you are interested. Opens a thread with the seller; nothing is charged."""
+    try:
+        return marketplace.express_interest(user.id, str(listing_id), body.message)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/conversations")
+async def list_conversations(user=Depends(db.get_current_user)) -> list:
+    return marketplace.conversations_for(user.id)
+
+
+@app.get("/api/conversations/{conversation_id}")
+async def get_conversation(conversation_id: UUID, user=Depends(db.get_current_user)) -> dict:
+    thread = marketplace.thread_for(user.id, str(conversation_id))
+    if thread is None:
+        raise HTTPException(status_code=404, detail="That conversation is not yours.")
+    return thread
+
+
+@app.post("/api/conversations/{conversation_id}/messages", status_code=201)
+async def send_message(
+    conversation_id: UUID, body: MessageIn, user=Depends(db.get_current_user)
+) -> dict:
+    message = marketplace.post_message(user.id, str(conversation_id), body.body)
+    if message is None:
+        raise HTTPException(status_code=404, detail="That conversation is not yours.")
+    return message
+
+
+@app.get("/api/profile")
+async def read_profile(user=Depends(db.get_current_user)) -> dict | None:
+    return marketplace.get_profile(user.id)
+
+
+@app.put("/api/profile")
+async def save_profile(profile: ProfileIn, user=Depends(db.get_current_user)) -> dict:
+    return marketplace.upsert_profile(
+        user.id, profile.display_name, profile.region, profile.role, profile.contact_note
+    )
