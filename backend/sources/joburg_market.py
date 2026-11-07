@@ -58,6 +58,15 @@ ATTRIBUTION = (
 )
 PRICE_LIST_PAGE = "https://joburgmarket.co.za/daily-price-list/"
 
+# The sheet is one market's prices. Saying so is the difference between "this is
+# what produce fetches" and a farmer in Umlazi believing these are Durban prices.
+SCOPE_NOTE = (
+    "These are Johannesburg's prices, the national benchmark — not your nearest "
+    "market's. Durban, Cape Town, Tshwane and Gqeberha each trade at their own "
+    "prices, so treat these as a reference and check your local market before you "
+    "commit produce."
+)
+
 _MONTHS = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
     "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
@@ -223,6 +232,20 @@ def parse_price_list(html: str) -> dict:
     }
 
 
+def _source_block() -> dict:
+    """Provenance shared by the live and the archived payload."""
+    return {
+        "name": SOURCE_NAME,
+        "attribution": ATTRIBUTION,
+        "note": (
+            "Prices are the previous weekday's traded average as published by "
+            "the market. They are a reference for what produce is fetching, not "
+            "a quote for your produce."
+        ),
+        "scope": SCOPE_NOTE,
+    }
+
+
 async def _fetch_prices() -> dict:
     # The sheet is one small HTML page. At 30 seconds with a retry, an unreachable
     # host held the whole market card for a minute before it could say it was
@@ -252,15 +275,7 @@ async def _fetch_prices() -> dict:
         "listed_count": len(parsed["rows"]),
         "source_url": JOBURG_MARKET_URL,
         "price_list_page": PRICE_LIST_PAGE,
-        "source": {
-            "name": SOURCE_NAME,
-            "attribution": ATTRIBUTION,
-            "note": (
-                "Prices are the previous weekday's traded average as published by "
-                "the market. They are a reference for what produce is fetching, not "
-                "a quote for your produce."
-            ),
-        },
+        "source": _source_block(),
     }
 
 
@@ -446,13 +461,5 @@ def _payload_from_archive(as_of: str, records: list[dict]) -> dict | None:
             f"Nuru could not reach today's Joburg Market sheet, so this is the "
             f"sheet from {day.day} {day.strftime('%B %Y')} — the most recent one saved."
         ),
-        "source": {
-            "name": SOURCE_NAME,
-            "attribution": ATTRIBUTION,
-            "note": (
-                "Prices are the previous weekday's traded average as published by "
-                "the market. They are a reference for what produce is fetching, not "
-                "a quote for your produce."
-            ),
-        },
+        "source": _source_block(),
     }

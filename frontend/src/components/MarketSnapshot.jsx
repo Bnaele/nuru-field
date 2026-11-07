@@ -82,10 +82,19 @@ export default function MarketSnapshot() {
         </div>
 
         <p className="market-lede">
-          What fresh produce actually sold for at Joburg Market on{' '}
+          What fresh produce actually sold for at {data?.market || 'Joburg Market'} on{' '}
           {data?.as_of_label || 'the latest trading day'}. Prices are the day&apos;s total
           value divided by kilograms sold — realised averages, not asking prices.
         </p>
+
+        {/* One market's sheet was being read as if it were local. Name the scope
+            before the numbers, not after them. */}
+        {data?.source?.scope && (
+          <p className="market-scope">
+            <Icon name="location" size={15} />
+            <span>{data.source.scope}</span>
+          </p>
+        )}
 
         <div className="market-controls">
           <label className="market-search">
