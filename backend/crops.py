@@ -163,8 +163,42 @@ def _by_slug() -> dict[str, dict]:
 
 
 def find_by_slug(slug: str) -> dict | None:
-    """The catalogue row behind a `/crop/<slug>` page, or None."""
-    return _by_slug().get(slugify(slug))
+    """The catalogue row behind a `/crop/<slug>` page, or None.
+
+    Three keys resolve, most specific first: the scientific name, the curated
+    common name, and a South African local name. The page is normally reached
+    from a species link, but it is also reached from a plant a grower labelled
+    themselves, and `tomato`, `Dry beans` and `amadumbe` all have to work as
+    well as `solanum-lycopersicum` does.
+    """
+    key = slugify(slug)
+    return _by_slug().get(key) or _by_common_name().get(key) or _by_alias().get(key)
+
+
+@lru_cache(maxsize=1)
+def _by_common_name() -> dict[str, dict]:
+    """Species keyed by their curated common name: `tomato` -> Solanum lycopersicum.
+
+    Only rows with a hand-curated name are in this index, and where two species
+    share a name the first row wins - the CSV order is fixed, so the answer is
+    stable between requests.
+    """
+    index: dict[str, dict] = {}
+    for crop in load_reference():
+        if crop["has_common_name"]:
+            index.setdefault(slugify(crop["name"]), crop)
+    return index
+
+
+@lru_cache(maxsize=1)
+def _by_alias() -> dict[str, dict]:
+    """Species keyed by local name, so `/crop/amadumbe` and `/crop/spanspek` work."""
+    index: dict[str, dict] = {}
+    for word, species in VERNACULAR_ALIASES.items():
+        crop = _by_slug().get(slugify(species[0]))
+        if crop is not None:
+            index[slugify(word)] = crop
+    return index
 
 
 def _optional_float(value: str | None) -> float | None:

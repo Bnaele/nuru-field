@@ -730,6 +730,24 @@
   color: var(--muted);
 }
 
+.plant-crop-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--moss);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+
+.plant-crop-link:hover {
+  color: var(--leaf);
+}
+
+.plant-crop-link svg {
+  opacity: 0.7;
+}
+
 .plant-delete {
   background: transparent;
   border: 1px solid var(--mist);
@@ -969,12 +987,30 @@
 
 .crop-list li {
   display: flex;
-  align-items: flex-start;
-  gap: 0.7rem;
-  padding: 0.75rem 0.85rem;
   background: var(--paper);
   border: 1px solid var(--mist);
   border-radius: 10px;
+}
+
+/* One card, one link. The name used to be the only anchor, so a tap anywhere
+   else on the card did nothing and looked like the guide was broken. The hover
+   and focus states move with it, since a whole card that lights up on hover is
+   the clearest signal that the whole card is tappable. */
+.crop-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 10px;
+}
+
+.crop-row:hover,
+.crop-row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--moss);
 }
 
 .crop-score {
@@ -2550,6 +2586,10 @@
   font-size: 0.94rem;
   font-weight: 700;
   line-height: 1.25;
+}
+
+.crop-row:hover .crop-name-link {
+  color: var(--moss);
 }
 
 .crop-name-link svg {

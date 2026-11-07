@@ -9,8 +9,10 @@
 // of them impossible to record.
 
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import Icon from './Icon'
 import { localDateString, stageFromDate } from '../hooks/usePlants'
+import { slugify } from '../lib/slug'
 
 const SUGGESTIONS = [
   'Maize', 'Wheat', 'Sorghum', 'Sunflower', 'Spinach', 'Cabbage', 'Carrot',
@@ -134,7 +136,17 @@ export default function MyPlants({ plants: store }) {
                 <div className="plant-info">
                   <strong>{plant.name}</strong>
                   <span className="plant-meta">
-                    {plant.crop_type || 'crop not set'} · {stageFromDate(plant.planting_date)}
+                    {plant.crop_type ? (
+                      // The crop a grower typed is the best handle on its guide:
+                      // the backend resolves both common and local names.
+                      <Link to={`/crop/${slugify(plant.crop_type)}`} className="plant-crop-link">
+                        {plant.crop_type}
+                        <Icon name="arrow" size={12} />
+                      </Link>
+                    ) : (
+                      'crop not set'
+                    )}{' '}
+                    · {stageFromDate(plant.planting_date)}
                   </span>
                 </div>
                 <button

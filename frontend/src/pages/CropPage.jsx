@@ -111,7 +111,15 @@ export default function CropPage({ fieldProfile }) {
               Nothing matches <strong>{slug}</strong>. The catalogue holds 2,066 species;
               search it by common name, scientific name or family from your field page.
             </p>
-            <Link to="/field" className="button button-primary">Search the catalogue</Link>
+            {/* Hand the words back to the search box: a slug is only a guess at
+                what was meant, and "sweet corn" is a better query than
+                "sweet-corn" is a page. */}
+            <Link
+              to={`/field?q=${encodeURIComponent(slug.replace(/-/g, ' '))}`}
+              className="button button-primary"
+            >
+              Search the catalogue
+            </Link>
           </div>
         </div>
       </main>

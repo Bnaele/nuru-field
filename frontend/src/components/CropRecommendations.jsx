@@ -26,7 +26,7 @@
 // does not.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import Icon from './Icon'
 import { api } from '../lib/api'
 
@@ -76,8 +76,11 @@ export default function CropRecommendations({ fieldProfile }) {
   const [error, setError] = useState('')
   const [category, setCategory] = useState(FOOD_FILTER)
   const [includeAll, setIncludeAll] = useState(false)
-  const [search, setSearch] = useState('')
-  const [query, setQuery] = useState('')
+  // `?q=` seeds the box, so a crop page that could not resolve a name can send
+  // the grower back here with the word already typed in.
+  const [params] = useSearchParams()
+  const [search, setSearch] = useState(() => params.get('q') || '')
+  const [query, setQuery] = useState(() => params.get('q') || '')
 
   const latitude = fieldProfile?.location?.latitude
   const longitude = fieldProfile?.location?.longitude
@@ -309,25 +312,30 @@ export default function CropRecommendations({ fieldProfile }) {
               const named = crop.name !== crop.scientific_name
               return (
                 <li key={`${crop.name}-${crop.scientific_name}`}>
-                  <ScoreBadge score={crop.score} />
-                  <div className="crop-body">
-                    <Link to={`/crop/${crop.slug}`} className="crop-name-link">
-                      {crop.name}
-                      <Icon name="arrow" size={13} />
-                    </Link>
-                    {/* An unnamed species shows its family instead of repeating
-                        the Latin binomial that is already the heading. */}
-                    <em className="crop-latin">
-                      {named ? crop.scientific_name : crop.family || 'No common name in ECOCROP'}
-                    </em>
-                    <span className="crop-meta">
-                      {crop.category} · {CONFIDENCE_LABEL[crop.confidence] || crop.confidence}
-                    </span>
-                    {crop.reasons?.[0] && <span className="crop-reason">{crop.reasons[0]}</span>}
-                    {crop.cautions?.[0] && (
-                      <span className="crop-caution">{crop.cautions[0]}</span>
-                    )}
-                  </div>
+                  {/* The whole card is the link. The name alone was a small
+                      target on a phone, and tapping the card anywhere else did
+                      nothing, which read as the guide being broken. */}
+                  <Link to={`/crop/${crop.slug}`} className="crop-row">
+                    <ScoreBadge score={crop.score} />
+                    <div className="crop-body">
+                      <span className="crop-name-link">
+                        {crop.name}
+                        <Icon name="arrow" size={13} />
+                      </span>
+                      {/* An unnamed species shows its family instead of repeating
+                          the Latin binomial that is already the heading. */}
+                      <em className="crop-latin">
+                        {named ? crop.scientific_name : crop.family || 'No common name in ECOCROP'}
+                      </em>
+                      <span className="crop-meta">
+                        {crop.category} · {CONFIDENCE_LABEL[crop.confidence] || crop.confidence}
+                      </span>
+                      {crop.reasons?.[0] && <span className="crop-reason">{crop.reasons[0]}</span>}
+                      {crop.cautions?.[0] && (
+                        <span className="crop-caution">{crop.cautions[0]}</span>
+                      )}
+                    </div>
+                  </Link>
                 </li>
               )
             })}
