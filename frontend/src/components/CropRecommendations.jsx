@@ -190,7 +190,7 @@ export default function CropRecommendations({ fieldProfile }) {
                   {' — '}
                   {context.mean_temperature_c != null && `${context.mean_temperature_c} °C in ${context.month}`}
                   {context.annual_rainfall_mm != null && `, ${context.annual_rainfall_mm} mm a year`}
-                  {context.soil_ph != null && `, soil pH ${context.soil_ph}`}
+                  {context.soil_ph != null && `, modelled soil pH near ${context.soil_ph}`}
                   {context.soil_texture ? `, ${context.soil_texture}` : ''}
                   .
                 </>

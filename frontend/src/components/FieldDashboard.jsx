@@ -74,6 +74,15 @@ function SoilCard({ soil }) {
   const ph = number(soil?.ph, 1)
   const available = Boolean(soil?.available)
 
+  // Nobody measures this. SoilGrids predicts pH from covariates at 250 m, and
+  // the prediction is worth roughly half a unit either way — the same as the
+  // distance between "acidic" and "near neutral". Printing "6.2" invited a
+  // grower to read a laboratory result into a model, so the card shows the
+  // range the model can actually defend and says which side of the line it is on.
+  const phBand = ph === null ? null : `about ${(ph - 0.5).toFixed(1)}–${(ph + 0.5).toFixed(1)}`
+  const phLabel =
+    ph === null ? null : ph < 5.5 ? 'on the acidic side' : ph > 7.5 ? 'on the alkaline side' : 'around neutral'
+
   return (
     <div className="soil-moisture card">
       <div className="card-label">
@@ -97,8 +106,8 @@ function SoilCard({ soil }) {
             </div>
           </div>
           <div className="rain-history">
-            <span>Soil pH</span>
-            <strong>{ph !== null ? `${ph} — ${ph < 5.5 ? 'acidic' : ph > 7.5 ? 'alkaline' : 'near neutral'}` : 'not modelled here'}</strong>
+            <span>Soil pH (modelled)</span>
+            <strong>{phBand ? `${phBand} — ${phLabel}` : 'not modelled here'}</strong>
           </div>
         </>
       ) : (
