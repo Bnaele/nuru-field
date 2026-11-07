@@ -9,6 +9,33 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { isInSouthAfrica } from '../lib/geo'
 
+// The field someone picked is theirs to keep. Without this, every reload and
+// every visit dropped them back to "Connect your location", and a browser that
+// cannot produce a GPS fix (Chrome on a desktop with no location provider is the
+// common case) had no way back to the field they were looking at yesterday.
+const STORAGE_KEY = 'nuru:field'
+
+function readSavedField() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null')
+    if (Number.isFinite(saved?.latitude) && Number.isFinite(saved?.longitude)) {
+      return saved
+    }
+  } catch {
+    // Private mode, corrupt JSON, disabled storage — none of which is worth
+    // failing a page load over.
+  }
+  return null
+}
+
+function saveField(latitude, longitude) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ latitude, longitude }))
+  } catch {
+    // Storage is a convenience here, not a requirement.
+  }
+}
+
 export function useFieldProfile() {
   const [profile, setProfile] = useState(null)
   const [status, setStatus] = useState('')
@@ -34,6 +61,7 @@ export function useFieldProfile() {
       const data = await api.fieldProfile(latitude, longitude, { signal: controller.signal })
       if (request !== requestRef.current) return
       setProfile(data)
+      saveField(latitude, longitude)
 
       // The backend answers anywhere on Earth. Saying so is more useful than
       // pretending a coordinate in Portugal is a South African smallholding.
@@ -57,6 +85,13 @@ export function useFieldProfile() {
     }
   }, [])
 
+  // Restore the last field as soon as the hook mounts, so the dashboard opens on
+  // the grower's own land instead of an empty prompt they have to re-answer.
+  useEffect(() => {
+    const saved = readSavedField()
+    if (saved) load(saved.latitude, saved.longitude)
+  }, [load])
+
   const locate = useCallback(() => {
     if (!navigator.geolocation) {
       setTone('error')
@@ -72,18 +107,29 @@ export function useFieldProfile() {
         load(position.coords.latitude, position.coords.longitude)
       },
       (error) => {
+        // A saved field is very often the right answer here: desktop browsers
+        // route geolocation through a network provider that can be blocked or
+        // unconfigured, so the request fails even though the person's field has
+        // not moved. Say what happened without discarding what we already have.
+        const hasSavedField = Boolean(profile)
+        const suffix = hasSavedField
+          ? ' Your last saved field is still loaded.'
+          : ' Search for your town or tap the map instead.'
+
         setTone('error')
-        setStatus(
-          error.code === 1
-            ? 'Location permission was not granted. You can still search for a town or tap the map.'
-            : 'Your location could not be determined. Try again outdoors, or search for your town instead.',
-        )
+        if (error.code === 1) {
+          setStatus(`Location permission is blocked for this site. Allow it in your browser settings.${suffix}`)
+        } else if (error.code === 2) {
+          setStatus(`This device could not work out where it is — its location service is not responding.${suffix}`)
+        } else {
+          setStatus(`Reading your location took too long. Try again in a moment.${suffix}`)
+        }
       },
       // Coarse and cached: a field profile does not need metre accuracy, and a
       // cached fix returns almost instantly on a second visit.
       { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 },
     )
-  }, [load])
+  }, [load, profile])
 
   return { profile, status, tone, loading, load, locate }
 }
