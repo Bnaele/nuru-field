@@ -21,6 +21,19 @@ log = logging.getLogger(__name__)
 
 KINDS = ("input", "produce")
 
+# PostgREST says PGRST205 (or "relation ... does not exist") when a table the API
+# queries was never created. On a fresh database that is a setup step, not a bug,
+# so it is reported as one.
+NOT_MIGRATED = (
+    "The marketplace tables do not exist yet. Run backend/schema_marketplace.sql "
+    "in the Supabase SQL editor, then reload."
+)
+
+
+def _is_missing_table(error: Exception) -> bool:
+    text = str(error)
+    return "PGRST205" in text or "does not exist" in text
+
 # The listing columns the API returns. Kept in one place so browse, detail and
 # create cannot drift apart.
 LISTING_COLUMNS = (
@@ -114,7 +127,12 @@ def browse(
         # containing either would rewrite the filter instead of being searched.
         needle = q.strip().replace(",", " ").replace("(", " ").replace(")", " ")
         query = query.or_(f"title.ilike.%{needle}%,description.ilike.%{needle}%")
-    response = query.order("created_at", desc=True).limit(limit).execute()
+    try:
+        response = query.order("created_at", desc=True).limit(limit).execute()
+    except Exception as error:
+        if _is_missing_table(error):
+            raise LookupError(NOT_MIGRATED) from error
+        raise
 
     rows = response.data or []
     names = _names_for([row["seller_id"] for row in rows])

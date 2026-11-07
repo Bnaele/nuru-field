@@ -593,7 +593,10 @@ async def browse_listings(
     limit: int = Query(default=60, ge=1, le=120),
 ) -> list:
     """What is on sale right now. Looking does not require an account."""
-    return marketplace.browse(kind=kind, category=category, q=q, limit=limit)
+    try:
+        return marketplace.browse(kind=kind, category=category, q=q, limit=limit)
+    except LookupError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 # Declared before `/api/listings/{listing_id}`, or "mine" would be parsed as an
