@@ -76,8 +76,10 @@ async def fetch_climate(latitude: float, longitude: float) -> dict:
             "longitude": longitude,
             "format": "JSON",
         },
-        timeout=45.0,
-        retries=1,
+        # This is the backup, so it is allowed to be slower than the primary but
+        # not to hold the page: one point of climatology takes a few seconds.
+        timeout=20.0,
+        retries=0,
         unavailable_message=(
             "Historical climate data is temporarily unavailable. "
             "Crop suggestions need it, so they are paused for now."

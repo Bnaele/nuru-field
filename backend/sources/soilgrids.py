@@ -96,8 +96,11 @@ async def _fetch_soil(latitude: float, longitude: float) -> dict:
     payload = await get_json(
         SOILGRIDS_ENDPOINT,
         params=params,
-        timeout=30.0,
-        retries=1,
+        # Soil runs in parallel with the climate fetch, so it must not outlast it:
+        # a point query answers in one to three seconds, and thirty twice held the
+        # whole field profile for a minute when the service was having a bad day.
+        timeout=15.0,
+        retries=0,
         unavailable_message="Soil data is temporarily unavailable for this location.",
     )
 

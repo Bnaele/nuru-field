@@ -132,8 +132,13 @@ async def fetch_climate(latitude: float, longitude: float) -> dict:
             "daily": "temperature_2m_mean,temperature_2m_min,precipitation_sum",
             "timezone": "auto",
         },
-        timeout=45.0,
-        retries=1,
+        # A ten-year archive normally answers in a couple of seconds. The budget
+        # here is deliberately short, because this is the first link in a
+        # fallback chain: 45 seconds twice meant a grower waited a minute and a
+        # half on a blank page before NASA POWER was even tried. A failure now
+        # costs twelve seconds and the next provider gets the time instead.
+        timeout=12.0,
+        retries=0,
         unavailable_message=(
             "Historical climate data is temporarily unavailable. "
             "Crop suggestions need it, so they are paused for now."
