@@ -1,8 +1,13 @@
 # Netlify build for the Nuru Field frontend.
 #
-# The app is a single-page React build served from frontend/dist. Deep links such
-# as /field and /login are handled by frontend/public/_redirects, which Vite
-# copies into the build output.
+# The app is a single-page React build served from frontend/dist. Every route
+# other than / exists only in the browser, so the host has to answer a direct
+# request for /field or /login with index.html rather than its own 404.
+#
+# That rewrite is declared here rather than relying on frontend/public/_redirects:
+# the deployed copy of that file was never applied, and the symptom was a Netlify
+# "Page not found" on /login, /field and /scan for anyone who refreshed or opened
+# a link — the app worked only when navigated to from inside itself.
 
 [build]
   base = "frontend"
@@ -26,3 +31,10 @@
   [headers.values]
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Single-page app fallback. Status 200 (a rewrite, not a redirect) keeps the URL
+# the visitor typed, which is what react-router expects to read.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
